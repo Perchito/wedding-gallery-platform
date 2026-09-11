@@ -9,6 +9,7 @@ import type { GuestbookMessage } from "@/lib/types";
 interface GuestbookSheetProps {
   open: boolean;
   onClose: () => void;
+  galleryId: string;
   messages: GuestbookMessage[];
   guestSessionId: string;
   guestName: string | null;
@@ -19,6 +20,7 @@ interface GuestbookSheetProps {
 export function GuestbookSheet({
   open,
   onClose,
+  galleryId,
   messages,
   guestSessionId,
   guestName,
@@ -28,22 +30,35 @@ export function GuestbookSheet({
   const [name, setName] = useState(guestName ?? "");
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleSend() {
-    if (!message.trim()) return;
+  async function handleSend() {
+    if (!message.trim() || sending) return;
+    setSending(true);
+    setError(null);
     onGuestNameChange(name.trim());
-    onSend({
-      id: `msg_${Date.now()}`,
-      galleryId: "gallery_demo",
-      guestSessionId,
-      guestName: name.trim() || null,
-      message: message.trim(),
-      createdAt: new Date().toISOString(),
-      approvalStatus: "approved",
-    });
-    setMessage("");
-    setSent(true);
-    setTimeout(() => setSent(false), 2500);
+    try {
+      const res = await fetch(`/api/galleries/${galleryId}/guestbook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guestSessionId,
+          guestName: name.trim() || null,
+          message: message.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to send");
+      const saved: GuestbookMessage = await res.json();
+      onSend(saved);
+      setMessage("");
+      setSent(true);
+      setTimeout(() => setSent(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send message");
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -76,12 +91,13 @@ export function GuestbookSheet({
               className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
             />
           </label>
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             onClick={handleSend}
-            disabled={!message.trim()}
+            disabled={!message.trim() || sending}
             className="rounded-lg bg-blush-dark px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
           >
-            Send Message
+            {sending ? "Sending…" : "Send Message"}
           </button>
         </div>
 

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Download, Upload } from "lucide-react";
-import { getCreatedGalleryBySlug } from "@/lib/created-galleries";
 import { formatEventDate } from "@/lib/utils";
 import {
   galleryQrPngDataUrl,
@@ -26,17 +25,8 @@ const FONT_OPTIONS: { id: CardFont; label: string; previewClass: string }[] = [
   { id: "courier", label: "Typewriter", previewClass: "font-mono" },
 ];
 
-export function QrCardCustomizer({ slug, serverGallery }: QrCardCustomizerProps) {
-  const [gallery, setGallery] = useState<Gallery | null>(serverGallery);
-  const [resolved, setResolved] = useState(Boolean(serverGallery));
-
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (serverGallery) return;
-    setGallery(getCreatedGalleryBySlug(slug));
-    setResolved(true);
-  }, [slug, serverGallery]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+export function QrCardCustomizer({ serverGallery }: QrCardCustomizerProps) {
+  const gallery = serverGallery;
 
   const [partnerA, setPartnerA] = useState("");
   const [partnerB, setPartnerB] = useState("");
@@ -108,8 +98,6 @@ export function QrCardCustomizer({ slug, serverGallery }: QrCardCustomizerProps)
     const svg = await galleryQrSvgString(galleryUrl);
     downloadBlob(new Blob([svg], { type: "image/svg+xml" }), `${gallery.slug}-qr-code.svg`);
   }
-
-  if (!resolved) return null;
 
   if (!gallery) {
     return (

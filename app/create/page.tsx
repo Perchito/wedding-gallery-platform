@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Heart, Calendar, MapPin, Image as ImageIcon, ArrowRight, ArrowLeft } from "lucide-react";
-import { createGallery } from "@/lib/created-galleries";
 
 type Step = 1 | 2 | 3;
 
@@ -17,20 +16,33 @@ export default function CreateGalleryPage() {
   const [heroImageUrl, setHeroImageUrl] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const step1Valid = partnerA.trim() && partnerB.trim() && eventDate;
 
-  function handleCreate() {
+  async function handleCreate() {
     setSubmitting(true);
-    const gallery = createGallery({
-      partnerA: partnerA.trim(),
-      partnerB: partnerB.trim(),
-      eventDate,
-      venue: venue.trim(),
-      heroImageUrl: heroImageUrl.trim(),
-      description: description.trim(),
-    });
-    router.push(`/g/${gallery.slug}?created=1`);
+    setError(null);
+    try {
+      const res = await fetch("/api/galleries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          partnerA: partnerA.trim(),
+          partnerB: partnerB.trim(),
+          eventDate,
+          venue: venue.trim(),
+          heroImageUrl: heroImageUrl.trim(),
+          description: description.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to create gallery");
+      const gallery = await res.json();
+      router.push(`/g/${gallery.slug}?created=1`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create gallery");
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -170,11 +182,11 @@ export default function CreateGalleryPage() {
             </button>
           )}
         </div>
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
       <p className="mt-6 text-center text-xs text-ink-muted">
-        This demo saves your gallery in this browser only (no account yet) —
-        see the README for wiring up real, shared storage.
+        Guests never need an account — only you do, to manage this gallery.
       </p>
     </div>
   );

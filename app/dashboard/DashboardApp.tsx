@@ -16,6 +16,8 @@ import {
   Trash2,
   Download,
   ExternalLink,
+  CalendarClock,
+  QrCode,
 } from "lucide-react";
 import { cn, formatEventDate } from "@/lib/utils";
 import type { Gallery, GalleryStats, GallerySettings, MediaItem } from "@/lib/types";
@@ -50,22 +52,55 @@ export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps
   }
 
   function hideSelected() {
+    const ids = Array.from(selected);
+    const allCurrentlyHidden = ids.every(
+      (id) => media.find((m) => m.id === id)?.moderationStatus === "removed"
+    );
+    const action = allCurrentlyHidden ? "restore" : "hide";
     setMedia((prev) =>
       prev.map((m) =>
         selected.has(m.id)
-          ? { ...m, moderationStatus: m.moderationStatus === "removed" ? "approved" : "removed" }
+          ? { ...m, moderationStatus: action === "hide" ? "removed" : "approved" }
           : m
       )
     );
+    fetch(`/api/galleries/${gallery.id}/media/bulk`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mediaIds: ids, action }),
+    }).catch(() => {});
   }
 
   function deleteSelected() {
+    const ids = Array.from(selected);
     setMedia((prev) => prev.filter((m) => !selected.has(m.id)));
     setSelected(new Set());
+    fetch(`/api/galleries/${gallery.id}/media/bulk`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mediaIds: ids, action: "delete" }),
+    }).catch(() => {});
   }
 
   function toggleSetting(key: keyof GallerySettings) {
-    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+    setSettings((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      fetch(`/api/galleries/${gallery.id}/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: next[key] }),
+      }).catch(() => {});
+      return next;
+    });
+  }
+
+  function setPrivacy(privacy: GallerySettings["privacy"]) {
+    setSettings((prev) => ({ ...prev, privacy }));
+    fetch(`/api/galleries/${gallery.id}/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ privacy }),
+    }).catch(() => {});
   }
 
   const statCards = useMemo(
@@ -94,12 +129,26 @@ export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps
           </h1>
           <p className="text-sm text-ink-muted">{formatEventDate(gallery.eventDate)}</p>
         </div>
-        <Link
-          href={`/g/${gallery.slug}`}
-          className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40"
-        >
-          <ExternalLink size={14} /> View Public Gallery
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/dashboard/schedule"
+            className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40"
+          >
+            <CalendarClock size={14} /> Order of the Day
+          </Link>
+          <Link
+            href={`/dashboard/qr-card?slug=${gallery.slug}`}
+            className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40"
+          >
+            <QrCode size={14} /> QR Card
+          </Link>
+          <Link
+            href={`/g/${gallery.slug}`}
+            className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40"
+          >
+            <ExternalLink size={14} /> View Public Gallery
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -167,13 +216,13 @@ export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps
             );
           })}
         </div>
-        <p className="mt-2 text-xs text-ink-muted">
-          Showing 24 of {media.length} items. Full-resolution ZIP export runs as a
-          background job — see &quot;Download Gallery&quot; below.
-        </p>
-        <button className="mt-3 flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40">
+        <p className="mt-2 text-xs text-ink-muted">Showing 24 of {media.length} items.</p>
+        <a
+          href={`/api/galleries/${gallery.id}/export`}
+          className="mt-3 flex w-fit items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40"
+        >
           <Download size={14} /> Download Gallery (ZIP)
-        </button>
+        </a>
       </section>
 
       <section className="mt-10">
@@ -211,7 +260,7 @@ export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps
             {(["public", "private", "password"] as GallerySettings["privacy"][]).map((p) => (
               <button
                 key={p}
-                onClick={() => setSettings((prev) => ({ ...prev, privacy: p }))}
+                onClick={() => setPrivacy(p)}
                 className={cn(
                   "rounded-full border px-3 py-1.5 text-xs font-medium capitalize",
                   settings.privacy === p
@@ -223,11 +272,13 @@ export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps
               </button>
             ))}
           </div>
+          {settings.privacy !== "public" && (
+            <p className="mt-2 flex items-center gap-1 text-xs text-amber-700">
+              <Eye size={12} /> Private/password galleries aren&apos;t enforced by the public
+              gallery page yet — only &quot;public&quot; is fully secured today.
+            </p>
+          )}
         </div>
-        <p className="mt-3 flex items-center gap-1 text-xs text-ink-muted">
-          <Eye size={12} /> Settings here update this session only — wire this form to
-          `PATCH /api/galleries/:id` once the backend exists.
-        </p>
       </section>
     </div>
   );

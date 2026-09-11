@@ -10,6 +10,7 @@ const MAX_SECONDS = 60;
 interface VoiceSheetProps {
   open: boolean;
   onClose: () => void;
+  galleryId: string;
   partnerNames: [string, string];
   guestSessionId: string;
   guestName: string | null;
@@ -22,6 +23,7 @@ type RecordState = "idle" | "recording" | "recorded" | "unsupported" | "denied";
 export function VoiceSheet({
   open,
   onClose,
+  galleryId,
   partnerNames,
   guestSessionId,
   guestName,
@@ -34,9 +36,12 @@ export function VoiceSheet({
   const [isPlaying, setIsPlaying] = useState(false);
   const [name, setName] = useState(guestName ?? "");
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const recordedBlobRef = useRef<Blob | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
 
@@ -60,6 +65,7 @@ export function VoiceSheet({
       recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        recordedBlobRef.current = blob;
         setAudioUrl(URL.createObjectURL(blob));
         stream.getTracks().forEach((t) => t.stop());
       };
@@ -89,6 +95,7 @@ export function VoiceSheet({
 
   function reRecord() {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
+    recordedBlobRef.current = null;
     setAudioUrl(null);
     setSeconds(0);
     setState("idle");
@@ -105,22 +112,35 @@ export function VoiceSheet({
     setIsPlaying(!isPlaying);
   }
 
-  function handleSend() {
+  async function handleSend() {
+    if (!recordedBlobRef.current || sending) return;
+    setSending(true);
+    setError(null);
     onGuestNameChange(name.trim());
-    onSend({
-      id: `vm_${Date.now()}`,
-      galleryId: "gallery_demo",
-      guestSessionId,
-      guestName: name.trim() || null,
-      audioUrl: audioUrl ?? "",
-      durationSeconds: seconds,
-      createdAt: new Date().toISOString(),
-    });
-    setSent(true);
-    setTimeout(() => {
-      setSent(false);
-      reRecord();
-    }, 2000);
+    try {
+      const formData = new FormData();
+      formData.append("audio", recordedBlobRef.current, "voice-message.webm");
+      formData.append("guestSessionId", guestSessionId);
+      formData.append("guestName", name.trim());
+      formData.append("durationSeconds", String(seconds));
+
+      const res = await fetch(`/api/galleries/${galleryId}/voice-messages`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to send");
+      const saved: VoiceMessage = await res.json();
+      onSend(saved);
+      setSent(true);
+      setTimeout(() => {
+        setSent(false);
+        reRecord();
+      }, 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send voice message");
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -204,11 +224,13 @@ export function VoiceSheet({
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                 />
               </label>
+              {error && <p className="text-sm text-red-600">{error}</p>}
               <button
                 onClick={handleSend}
-                className="w-full rounded-lg bg-blush-dark px-4 py-2.5 text-sm font-semibold text-white"
+                disabled={sending}
+                className="w-full rounded-lg bg-blush-dark px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
               >
-                Send Voice Message
+                {sending ? "Sending…" : "Send Voice Message"}
               </button>
             </div>
           )}

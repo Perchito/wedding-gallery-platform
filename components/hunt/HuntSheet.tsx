@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CheckCircle2, Camera, Images, ChevronLeft } from "lucide-react";
+import { CheckCircle2, Camera, Images, ChevronLeft, Loader2 } from "lucide-react";
 import { BottomSheet } from "@/components/sheets/BottomSheet";
 import { cn } from "@/lib/utils";
+import { uploadMedia } from "@/lib/upload-media";
 import type { HuntCategory, HuntChallenge, MediaItem } from "@/lib/types";
 
 interface HuntSheetProps {
@@ -13,8 +14,10 @@ interface HuntSheetProps {
   challenges: HuntChallenge[];
   completed: Set<string>;
   onComplete: (challengeId: string, media: MediaItem) => void;
-  galleryId: string;
+  gallerySlug: string;
+  defaultAlbumId: string;
   guestSessionId: string;
+  guestName: string | null;
 }
 
 export function HuntSheet({
@@ -24,37 +27,43 @@ export function HuntSheet({
   challenges,
   completed,
   onComplete,
-  galleryId,
+  gallerySlug,
+  defaultAlbumId,
   guestSessionId,
+  guestName,
 }: HuntSheetProps) {
   const [active, setActive] = useState<HuntChallenge | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const pct = Math.round((completed.size / challenges.length) * 100);
 
-  function handleFile(file: File | null) {
-    if (!file || !active) return;
-    const url = URL.createObjectURL(file);
-    const media: MediaItem = {
-      id: `hunt_media_${Date.now()}`,
-      galleryId,
-      albumId: "album_main",
-      guestSessionId,
-      uploaderName: "You",
-      type: "photo",
-      originalUrl: url,
-      thumbnailUrl: url,
-      previewUrl: url,
-      width: 4,
-      height: 5,
-      categories: ["photos"],
-      liked: false,
-      processingStatus: "ready",
-      moderationStatus: "approved",
-      createdAt: new Date().toISOString(),
-    };
-    onComplete(active.id, media);
-    setActive(null);
+  async function handleFile(file: File | null) {
+    if (!file || !active || uploading) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const media = await uploadMedia({
+        gallerySlug,
+        file,
+        albumId: defaultAlbumId,
+        guestSessionId,
+        guestName,
+      });
+      const res = await fetch(`/api/hunt/${active.id}/submissions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guestSessionId, mediaId: media.id }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to record submission");
+      onComplete(active.id, media);
+      setActive(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to capture challenge");
+    } finally {
+      setUploading(false);
+    }
   }
 
   if (active) {
@@ -79,20 +88,28 @@ export function HuntSheet({
           className="hidden"
           onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
         />
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="flex flex-col items-center gap-2 rounded-xl border border-border py-6 text-sm font-medium text-ink-muted hover:border-blush-dark/50 hover:text-blush-dark"
-          >
-            <Camera size={22} /> Take Photo
-          </button>
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="flex flex-col items-center gap-2 rounded-xl border border-border py-6 text-sm font-medium text-ink-muted hover:border-blush-dark/50 hover:text-blush-dark"
-          >
-            <Images size={22} /> Choose Photo
-          </button>
-        </div>
+        {uploading ? (
+          <div className="flex flex-col items-center gap-2 py-6 text-sm text-ink-muted">
+            <Loader2 size={22} className="animate-spin text-blush-dark" />
+            Uploading…
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="flex flex-col items-center gap-2 rounded-xl border border-border py-6 text-sm font-medium text-ink-muted hover:border-blush-dark/50 hover:text-blush-dark"
+            >
+              <Camera size={22} /> Take Photo
+            </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="flex flex-col items-center gap-2 rounded-xl border border-border py-6 text-sm font-medium text-ink-muted hover:border-blush-dark/50 hover:text-blush-dark"
+            >
+              <Images size={22} /> Choose Photo
+            </button>
+          </div>
+        )}
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </BottomSheet>
     );
   }

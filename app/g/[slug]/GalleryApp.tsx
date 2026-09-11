@@ -17,6 +17,8 @@ import {
   getHuntProgress,
   markHuntChallengeComplete,
 } from "@/lib/guest-session";
+import { useOfflineQueueDrain } from "@/lib/offline-upload-drain";
+import { useGalleryRealtime } from "@/lib/realtime/useGalleryRealtime";
 import type {
   Album,
   Category,
@@ -102,6 +104,18 @@ export function GalleryApp({
     setGuestName(session.guestName);
     setHuntCompleted(getHuntProgress(gallery.id, session.guestSessionId));
     setGalleryUrl(`${window.location.origin}/g/${gallery.slug}`);
+
+    // Best-effort — mints a real guest_sessions row server-side so this
+    // client-generated id can be referenced by media/guestbook/hunt FKs.
+    fetch("/api/guest-sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        galleryId: gallery.id,
+        guestSessionId: session.guestSessionId,
+        guestName: session.guestName,
+      }),
+    }).catch(() => {});
   }, [gallery.id, gallery.slug]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -131,15 +145,39 @@ export function GalleryApp({
     if (!name) return;
     const updated = updateGuestName(gallery.id, name);
     setGuestName(updated.guestName);
+    fetch("/api/guest-sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        galleryId: gallery.id,
+        guestSessionId: updated.guestSessionId,
+        guestName: updated.guestName,
+      }),
+    }).catch(() => {});
   }
 
   function handleToggleLike(id: string) {
-    setMedia((prev) => prev.map((m) => (m.id === id ? { ...m, liked: !m.liked } : m)));
+    const item = media.find((m) => m.id === id);
+    if (!item || !guestSessionId) return;
+    const nextLiked = !item.liked;
+    setMedia((prev) => prev.map((m) => (m.id === id ? { ...m, liked: nextLiked } : m)));
+    fetch(`/api/media/${id}/like`, {
+      method: nextLiked ? "POST" : "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ guestSessionId }),
+    }).catch(() => {});
   }
 
   function handleUploaded(items: MediaItem[]) {
-    setMedia((prev) => [...items, ...prev]);
+    setMedia((prev) => {
+      const existingIds = new Set(prev.map((m) => m.id));
+      const fresh = items.filter((m) => !existingIds.has(m.id));
+      return [...fresh, ...prev];
+    });
   }
+
+  useGalleryRealtime(gallery.id, (item) => handleUploaded([item]));
+  useOfflineQueueDrain(gallery.id, gallery.slug, guestSessionId, guestName, handleUploaded);
 
   function handleHuntComplete(challengeId: string, item: MediaItem) {
     handleUploaded([item]);
@@ -204,6 +242,7 @@ export function GalleryApp({
         open={sheet === "upload"}
         onClose={() => setSheet(null)}
         galleryId={gallery.id}
+        gallerySlug={gallery.slug}
         albums={albums}
         guestSessionId={guestSessionId}
         guestName={guestName}
@@ -214,6 +253,7 @@ export function GalleryApp({
       <GuestbookSheet
         open={sheet === "guestbook"}
         onClose={() => setSheet(null)}
+        galleryId={gallery.id}
         messages={messages}
         guestSessionId={guestSessionId}
         guestName={guestName}
@@ -224,6 +264,7 @@ export function GalleryApp({
       <VoiceSheet
         open={sheet === "voice"}
         onClose={() => setSheet(null)}
+        galleryId={gallery.id}
         partnerNames={gallery.partnerNames}
         guestSessionId={guestSessionId}
         guestName={guestName}
@@ -238,8 +279,10 @@ export function GalleryApp({
         challenges={huntChallenges}
         completed={huntCompleted}
         onComplete={handleHuntComplete}
-        galleryId={gallery.id}
+        gallerySlug={gallery.slug}
+        defaultAlbumId={albums[0]?.id ?? ""}
         guestSessionId={guestSessionId}
+        guestName={guestName}
       />
 
       <FindMeSheet

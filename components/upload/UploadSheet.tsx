@@ -5,12 +5,14 @@ import { Camera, Images, Video, RotateCcw, CheckCircle2 } from "lucide-react";
 import { BottomSheet } from "@/components/sheets/BottomSheet";
 import { cn } from "@/lib/utils";
 import { enqueueOfflineUpload, isOnline } from "@/lib/offline-queue";
+import { uploadMedia } from "@/lib/upload-media";
 import type { Album, MediaItem, UploadState, UploadTask } from "@/lib/types";
 
 interface UploadSheetProps {
   open: boolean;
   onClose: () => void;
   galleryId: string;
+  gallerySlug: string;
   albums: Album[];
   guestSessionId: string;
   guestName: string | null;
@@ -28,6 +30,7 @@ export function UploadSheet({
   open,
   onClose,
   galleryId,
+  gallerySlug,
   albums,
   guestSessionId,
   guestName,
@@ -107,45 +110,31 @@ export function UploadSheet({
 
     updateTask(task.id, { state: "uploading", progress: 0 });
 
-    // Simulated upload progress + processing — swap for a real presigned-URL
-    // PUT + polling against /api/galleries/:id/media once the backend exists.
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 15 + Math.random() * 15;
-      if (progress >= 100) {
-        clearInterval(interval);
-        updateTask(task.id, { state: "processing", progress: 100 });
-        setTimeout(() => finishUpload(task), 500 + Math.random() * 500);
-      } else {
-        updateTask(task.id, { progress });
-      }
-    }, 250);
-  }
-
-  function finishUpload(task: UploadTask) {
-    updateTask(task.id, { state: "complete", progress: 100 });
-    const now = new Date().toISOString();
-    const mediaItem: MediaItem = {
-      id: `media_${task.id}`,
-      galleryId,
-      albumId: task.albumId,
-      guestSessionId,
-      uploaderName: nameInput.trim() || "You",
-      type: task.type,
-      originalUrl: task.previewUrl,
-      thumbnailUrl: task.previewUrl,
-      previewUrl: task.previewUrl,
-      width: 4,
-      height: 5,
-      caption: task.caption || undefined,
-      categories: task.type === "video" ? ["videos"] : ["photos"],
-      liked: false,
-      processingStatus: "ready",
-      moderationStatus: "approved",
-      createdAt: now,
-    };
-    onUploaded([mediaItem]);
-    setDone(true);
+    try {
+      const mediaItem = await uploadMedia({
+        gallerySlug,
+        file: task.file,
+        albumId: task.albumId,
+        caption: task.caption,
+        guestSessionId,
+        guestName: nameInput.trim() || null,
+        onProgress: (pct) => {
+          if (pct >= 100) {
+            updateTask(task.id, { state: "processing", progress: 100 });
+          } else {
+            updateTask(task.id, { state: "uploading", progress: pct });
+          }
+        },
+      });
+      updateTask(task.id, { state: "complete", progress: 100 });
+      onUploaded([mediaItem]);
+      setDone(true);
+    } catch (err) {
+      updateTask(task.id, {
+        state: "failed",
+        error: err instanceof Error ? err.message : "Upload failed",
+      });
+    }
   }
 
   function retryTask(task: UploadTask) {
