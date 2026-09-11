@@ -37,7 +37,7 @@ export function GalleryHero({
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/10" />
 
-        <div className="absolute inset-x-0 bottom-0 px-5 pb-6 text-white sm:px-8 sm:pb-10">
+        <div className="absolute inset-x-0 bottom-0 px-5 pb-10 text-white sm:px-8 sm:pb-14">
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/80">
             Wedding Gallery
           </p>
@@ -48,7 +48,7 @@ export function GalleryHero({
             </span>{" "}
             {gallery.partnerNames[1]}
           </h1>
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/90">
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-white/90">
             <span>{formatEventDate(gallery.eventDate)}</span>
             {gallery.venue && (
               <span className="inline-flex items-center gap-1">
@@ -62,7 +62,7 @@ export function GalleryHero({
         </div>
       </div>
 
-      <div className="relative -mt-7 px-5 sm:px-8">
+      <div className="relative -mt-4 px-5 sm:-mt-6 sm:px-8">
         <div className="mx-auto flex max-w-3xl flex-col gap-3 rounded-2xl border border-border bg-surface p-4 shadow-lg shadow-black/5 sm:flex-row sm:items-center sm:justify-between">
           <button
             onClick={onShare}
@@ -72,7 +72,7 @@ export function GalleryHero({
             Share Your Memories
           </button>
           <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2">
-            <SecondaryAction icon={<Camera size={16} />} label="Find My Photos" onClick={onFindMe} />
+            <SecondaryAction icon={<Camera size={16} />} label="Find Me" onClick={onFindMe} />
             <SecondaryAction icon={<BookHeart size={16} />} label="Guestbook" onClick={onGuestbook} />
             <SecondaryAction icon={<Mic size={16} />} label="Voice" onClick={onVoice} />
           </div>

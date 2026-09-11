@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Cormorant_Infant, Great_Vibes } from "next/font/google";
 import "./globals.css";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import { ViewportZoomReset } from "@/components/ViewportZoomReset";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}
         <ServiceWorkerRegister />
+        <ViewportZoomReset />
       </body>
     </html>
   );
