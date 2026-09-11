@@ -33,7 +33,7 @@ export function GalleryHero({
           fill
           priority
           sizes="100vw"
-          className="object-cover"
+          className="object-cover object-[center_32%]"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/10" />
 
