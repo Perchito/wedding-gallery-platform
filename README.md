@@ -144,14 +144,45 @@ db/
   schema.sql               target Postgres/Supabase schema (Phase 2/3)
 public/
   sw.js                    PWA service worker
+lib/supabase/
+  client.ts                browser Supabase client (anon key, RLS-respecting)
+  server.ts                server-component/action Supabase client (cookie-aware)
+  admin.ts                 service-role client — server-only, bypasses RLS
+  env.ts                   isSupabaseConfigured() feature-flag check
 ```
+
+## Also new: owner onboarding + QR card customization
+
+- `/create` — a 3-step form that creates a new gallery and takes you
+  straight to its live `/g/[slug]`. Until a backend exists, created
+  galleries are stored in this browser's `localStorage`
+  (`lib/created-galleries.ts`) and resolved client-side by
+  `app/g/[slug]/GalleryResolver.tsx` for any slug the server doesn't
+  recognize.
+- `/dashboard/qr-card?slug=<slug>` — customize the printable QR wedding
+  card (names, date, tagline, typography, colors, QR size, logo) with a
+  live preview, then export PDF/PNG/SVG. `lib/qr.ts#generateWeddingCardPdf`
+  is the reusable builder both this page and the gallery's Share sheet call.
 
 ## Wiring up a real backend (Phase 2)
 
-1. Apply `db/schema.sql` to a Postgres instance (Supabase recommended — it
-   gives you Postgres + Auth + Storage + Realtime + Edge Functions in one).
+**Scaffolded, not yet connected** — `@supabase/supabase-js` and
+`@supabase/ssr` are installed and `lib/supabase/{client,server,admin}.ts`
+are ready to use, but no page queries Supabase yet: every page still reads
+`lib/mock-data.ts` (plus the client-only `lib/created-galleries.ts` for
+onboarding). `lib/supabase/env.ts#isSupabaseConfigured()` is the flag to
+branch on once real queries are added, so the app can keep running on mock
+data in environments without credentials.
+
+To finish the wiring:
+
+1. Create a Supabase project, apply `db/schema.sql` to it (SQL Editor or
+   the CLI), and copy `.env.example` to `.env.local` with the project's
+   URL, anon key, and service role key (also set these in Vercel's
+   project settings for the deployed site).
 2. Replace the mock-data reads in `app/g/[slug]/page.tsx` and
-   `app/dashboard/page.tsx` with real queries scoped by `gallery_id`.
+   `app/dashboard/page.tsx` with real queries (via `createSupabaseServerClient()`)
+   scoped by `gallery_id`, guarded by `isSupabaseConfigured()`.
 3. Replace the simulated upload in `components/upload/UploadSheet.tsx` with
    a presigned-URL flow: request a signed PUT URL from an API route, upload
    directly to object storage, then poll/subscribe for processing status.
@@ -162,3 +193,6 @@ public/
    for a real face-detection + embedding + vector similarity search against
    `face_embeddings`, and delete selfies after processing per
    `face_search_requests`.
+6. Point `/create` at a real `INSERT` (via a Server Action) instead of
+   `lib/created-galleries.ts`, once galleries need to be visible to more
+   than the browser that created them.
