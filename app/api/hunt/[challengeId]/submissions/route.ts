@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { checkGalleryAllowsGuestWrite } from "@/lib/guest-write-guard";
 
 // The client uploads the photo through the normal media pipeline first
 // (lib/upload-media.ts), then calls this to link the resulting mediaId to
@@ -25,13 +26,22 @@ export async function POST(
   if (!challenge) {
     return NextResponse.json({ error: "Challenge not found" }, { status: 404 });
   }
-  const { data: settings } = await supabase
-    .from("gallery_settings")
-    .select("allow_photo_hunt")
-    .eq("gallery_id", challenge.gallery_id)
+
+  const guard = await checkGalleryAllowsGuestWrite(supabase, challenge.gallery_id, "allow_photo_hunt");
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
+  }
+
+  // The media being submitted must actually belong to this gallery and this
+  // guest session — otherwise any guest could complete a challenge by
+  // pointing at someone else's (or another gallery's) media id.
+  const { data: media } = await supabase
+    .from("media")
+    .select("gallery_id, guest_session_id")
+    .eq("id", mediaId)
     .maybeSingle();
-  if (settings && settings.allow_photo_hunt === false) {
-    return NextResponse.json({ error: "Photo Hunt is disabled for this gallery" }, { status: 403 });
+  if (!media || media.gallery_id !== challenge.gallery_id || media.guest_session_id !== guestSessionId) {
+    return NextResponse.json({ error: "Media does not belong to this guest or gallery" }, { status: 403 });
   }
 
   const { data, error } = await supabase

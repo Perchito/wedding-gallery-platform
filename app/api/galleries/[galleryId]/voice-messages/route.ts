@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { checkGalleryAllowsGuestWrite } from "@/lib/guest-write-guard";
 import { MEDIA_BUCKET, buildVoicePath, getPublicMediaUrl } from "@/lib/supabase/storage";
 
 const MAX_SECONDS = 60;
@@ -28,13 +29,9 @@ export async function POST(
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data: settings } = await supabase
-    .from("gallery_settings")
-    .select("allow_voice_messages")
-    .eq("gallery_id", galleryId)
-    .maybeSingle();
-  if (settings && settings.allow_voice_messages === false) {
-    return NextResponse.json({ error: "Voice messages are disabled for this gallery" }, { status: 403 });
+  const guard = await checkGalleryAllowsGuestWrite(supabase, galleryId, "allow_voice_messages");
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   const id = randomUUID();

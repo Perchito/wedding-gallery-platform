@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { checkGalleryAllowsGuestWrite } from "@/lib/guest-write-guard";
 
 export async function POST(
   request: Request,
@@ -14,13 +15,9 @@ export async function POST(
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data: settings } = await supabase
-    .from("gallery_settings")
-    .select("allow_guestbook")
-    .eq("gallery_id", galleryId)
-    .maybeSingle();
-  if (settings && settings.allow_guestbook === false) {
-    return NextResponse.json({ error: "Guestbook is disabled for this gallery" }, { status: 403 });
+  const guard = await checkGalleryAllowsGuestWrite(supabase, galleryId, "allow_guestbook");
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   const id = randomUUID();

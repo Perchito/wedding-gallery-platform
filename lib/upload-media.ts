@@ -98,7 +98,6 @@ export async function uploadMedia(input: UploadMediaInput): Promise<MediaItem> {
       width,
       height,
       durationSeconds,
-      fileSize: file.size,
     }),
   });
   if (!completeRes.ok) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { checkGalleryAllowsGuestWrite } from "@/lib/guest-write-guard";
 import { MEDIA_BUCKET, buildOriginalPath, buildPosterPath, extFromMimeOrName } from "@/lib/supabase/storage";
 
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
@@ -45,18 +46,17 @@ export async function POST(
 
   const { data: gallery, error: galleryError } = await supabase
     .from("galleries")
-    .select("id, gallery_settings(allow_uploads)")
+    .select("id")
     .eq("slug", gallerySlug)
     .maybeSingle();
 
   if (galleryError || !gallery) {
     return NextResponse.json({ error: "Gallery not found" }, { status: 404 });
   }
-  const settings = Array.isArray(gallery.gallery_settings)
-    ? gallery.gallery_settings[0]
-    : gallery.gallery_settings;
-  if (settings && settings.allow_uploads === false) {
-    return NextResponse.json({ error: "Uploads are disabled for this gallery" }, { status: 403 });
+
+  const guard = await checkGalleryAllowsGuestWrite(supabase, gallery.id, "allow_uploads");
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
   const mediaId = randomUUID();

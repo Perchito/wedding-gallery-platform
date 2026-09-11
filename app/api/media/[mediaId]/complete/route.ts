@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { checkGalleryAllowsGuestWrite } from "@/lib/guest-write-guard";
 import { MEDIA_BUCKET, buildOriginalPath, buildPosterPath, getPublicMediaUrl } from "@/lib/supabase/storage";
 import type { CategoryId } from "@/lib/types";
 
@@ -15,7 +16,6 @@ interface CompleteBody {
   width: number | null;
   height: number | null;
   durationSeconds: number | null;
-  fileSize: number;
 }
 
 export async function POST(
@@ -36,27 +36,45 @@ export async function POST(
     width,
     height,
     durationSeconds,
-    fileSize,
   } = body;
 
   const supabase = createSupabaseAdminClient();
+
+  // /complete is independently callable (not just reachable via
+  // request-upload), so re-check the gallery actually allows uploads here
+  // too rather than trusting that request-upload's earlier check still holds.
+  const guard = await checkGalleryAllowsGuestWrite(supabase, galleryId, "allow_uploads");
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
+  }
+
+  // The album must actually belong to this gallery — otherwise a caller
+  // could pass another tenant's albumId and have their media categorized/
+  // attributed into a gallery they don't own.
+  const { data: album } = await supabase
+    .from("albums")
+    .select("name, gallery_id")
+    .eq("id", albumId)
+    .maybeSingle();
+  if (!album || album.gallery_id !== galleryId) {
+    return NextResponse.json({ error: "Album does not belong to this gallery" }, { status: 400 });
+  }
 
   const originalPath = buildOriginalPath(galleryId, mediaId, ext);
   const { data: exists } = await supabase.storage
     .from(MEDIA_BUCKET)
     .list(`${galleryId}/media/${mediaId}`);
-  if (!exists || exists.length === 0) {
+  const originalEntry = exists?.find((e) => e.name.startsWith("original."));
+  if (!originalEntry) {
     return NextResponse.json({ error: "Uploaded file not found in storage" }, { status: 400 });
   }
+  // Trust Storage's own record of the uploaded size, not whatever the
+  // client claims — the client already proved it can write this exact
+  // object (via its signed URL), so this is the real size either way.
+  const fileSize = (originalEntry.metadata?.size as number | undefined) ?? 0;
 
   const originalUrl = getPublicMediaUrl(originalPath);
   const posterUrl = hasPoster ? getPublicMediaUrl(buildPosterPath(galleryId, mediaId)) : null;
-
-  const { data: album } = await supabase
-    .from("albums")
-    .select("name")
-    .eq("id", albumId)
-    .maybeSingle();
 
   const categories: CategoryId[] = [mediaType === "video" ? "videos" : "photos"];
   const albumCategory = album?.name?.toLowerCase();

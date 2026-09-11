@@ -8,7 +8,7 @@
 // from .env.local if present.
 
 import { readFileSync, existsSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 function loadEnvLocal() {
@@ -38,7 +38,11 @@ if (!url || !serviceRoleKey) {
 const supabase = createClient(url, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
 const OWNER_EMAIL = "lmateocc99@gmail.com";
-const OWNER_PASSWORD = process.env.SEED_OWNER_PASSWORD || "wedding-gallery-demo-2026";
+// No hardcoded fallback — a fixed password string here would end up in git
+// history same as the one this replaced. Generate a random one unless the
+// caller explicitly provides one via env.
+const OWNER_PASSWORD = process.env.SEED_OWNER_PASSWORD || randomBytes(18).toString("base64url");
+const GENERATED_PASSWORD = !process.env.SEED_OWNER_PASSWORD;
 
 const HUNT_CHALLENGES = [
   { category: "The Couple", title: "First Kiss", prompt: "Capture their first kiss!" },
@@ -118,6 +122,7 @@ const DEMO_PHOTOS = [
 async function main() {
   console.log("Creating/finding owner account:", OWNER_EMAIL);
   let ownerId;
+  let accountCreated = false;
   const { data: created, error: createErr } = await supabase.auth.admin.createUser({
     email: OWNER_EMAIL,
     password: OWNER_PASSWORD,
@@ -130,13 +135,14 @@ async function main() {
       const existing = list?.users.find((u) => u.email === OWNER_EMAIL);
       if (!existing) throw createErr;
       ownerId = existing.id;
-      console.log("Owner already exists:", ownerId);
+      console.log("Owner already exists:", ownerId, "— password unchanged, not printed here.");
     } else {
       throw createErr;
     }
   } else {
     ownerId = created.user.id;
-    console.log("Created owner:", ownerId, "— password:", OWNER_PASSWORD);
+    accountCreated = true;
+    console.log("Created owner:", ownerId);
   }
 
   console.log("Upserting demo gallery…");
@@ -310,7 +316,12 @@ async function main() {
   }
 
   console.log("\nDone. /g/demo is now backed by real Supabase data.");
-  console.log(`Owner login: ${OWNER_EMAIL} / ${OWNER_PASSWORD}`);
+  if (accountCreated) {
+    console.log(`Owner login: ${OWNER_EMAIL} / ${OWNER_PASSWORD}`);
+    if (GENERATED_PASSWORD) {
+      console.log("(generated — save it now, it isn't stored anywhere and won't be printed again)");
+    }
+  }
 }
 
 main().catch((err) => {
