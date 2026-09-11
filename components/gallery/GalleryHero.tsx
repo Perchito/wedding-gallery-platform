@@ -42,7 +42,10 @@ export function GalleryHero({
             Wedding Gallery
           </p>
           <h1 className="mt-2 font-display text-4xl font-semibold leading-tight sm:text-6xl">
-            {gallery.partnerNames[0]} <span className="text-white/70">&amp;</span>{" "}
+            {gallery.partnerNames[0]}{" "}
+            <span className="font-script text-3xl font-normal text-gold-soft sm:text-5xl">
+              &amp;
+            </span>{" "}
             {gallery.partnerNames[1]}
           </h1>
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/90">

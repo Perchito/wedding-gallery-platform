@@ -1,16 +1,21 @@
 @import "tailwindcss";
 
+/* Design tokens generated via the ui-ux-pro-max skill's --design-system
+   search for "wedding celebration romantic elegant photo gallery"
+   (persisted at design-system/wedding-gallery-platform/MASTER.md). */
 :root {
-  --background: #fffaf6;
-  --foreground: #241c19;
+  --background: #fdf2f8;
+  --foreground: #831843;
   --surface: #ffffff;
-  --surface-muted: #f6efe9;
-  --border: #ece0d6;
-  --blush: #d98a8a;
-  --blush-dark: #b5615f;
-  --gold: #b8925a;
+  --surface-muted: #f0edf4;
+  --border: #fbcfe8;
+  --blush: #f472b6;
+  --blush-dark: #db2777;
+  --gold: #a16207;
   --gold-soft: #e9d4b3;
-  --ink-muted: #7a6f68;
+  --ink-muted: #475569;
+  --destructive: #dc2626;
+  --ring: #db2777;
 }
 
 @theme inline {
@@ -24,18 +29,24 @@
   --color-gold: var(--gold);
   --color-gold-soft: var(--gold-soft);
   --color-ink-muted: var(--ink-muted);
-  --font-display: var(--font-playfair);
+  --color-destructive: var(--destructive);
+  --color-ring: var(--ring);
+  --font-display: var(--font-cormorant);
+  --font-script: var(--font-great-vibes);
   --font-sans: var(--font-inter);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #17120f;
-    --foreground: #f5ece4;
-    --surface: #221a16;
-    --surface-muted: #2a211c;
-    --border: #3a2e27;
-    --ink-muted: #b6a89d;
+    --background: #2b1220;
+    --foreground: #fbe4ef;
+    --surface: #3a1a2b;
+    --surface-muted: #452032;
+    --border: #5c2c44;
+    --blush: #f9a8d4;
+    --blush-dark: #f472b6;
+    --gold: #d9a441;
+    --ink-muted: #cbb2c2;
   }
 }
 
@@ -52,6 +63,41 @@ body {
 body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   overscroll-behavior-y: none;
+}
+
+/* ui-ux-pro-max pre-delivery checklist: visible focus states + cursor-pointer
+   on every clickable element + smooth (150-300ms) transitions by default. */
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+button,
+a,
+[role="button"] {
+  cursor: pointer;
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease,
+    opacity 200ms ease,
+    transform 200ms ease,
+    box-shadow 200ms ease;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .safe-bottom {
