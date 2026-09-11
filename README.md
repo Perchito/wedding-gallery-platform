@@ -6,13 +6,14 @@ photos/videos without creating an account. Built as a Next.js PWA.
 
 Live demo route: **`/g/demo`** — *Mateo & Genesis, 20 March 2026*.
 
-## Status: Phase 1 + 2 on a real Supabase backend
+## Status: multi-tenant SaaS on a real Supabase backend
 
-This repo implements the **Phase 1** feature set end-to-end, plus most of
-**Phase 2** (guestbook, voice messages, Photo Hunt, Order of the Day,
-realtime gallery updates, offline uploads), backed by a real Supabase
-project — Postgres with RLS, Auth, and Storage. `lib/mock-data.ts` still
-exists as a reference/seed shape but is no longer read by any page.
+This repo implements the **Phase 1 + 2** guest-facing feature set end-to-end,
+plus the SaaS layer on top: a multi-gallery owner dashboard, real analytics,
+schema-level billing tiers, and a background ZIP export job — all backed by
+a real Supabase project (Postgres with RLS, Auth, Storage, Realtime).
+`lib/mock-data.ts` still exists as a reference/seed shape but is no longer
+read by any page.
 
 - Guests never authenticate. All guest writes (uploads, guestbook, voice
   messages, hunt submissions, likes, guest-session creation) go through
@@ -23,13 +24,15 @@ exists as a reference/seed shape but is no longer read by any page.
   Supabase via RLS `select` policies scoped to `gallery_settings.privacy =
   'public'`.
 - Owners sign in with email/password (Supabase Auth) to manage their
-  gallery — see `/login`, `/signup`, `proxy.ts` (Next 16 renamed
+  gallery(ies) — see `/login`, `/signup`, `proxy.ts` (Next 16 renamed
   `middleware.ts`), and `lib/supabase/middleware.ts`.
-- **Phase 3 (real AI face recognition, AI content moderation) is
-  intentionally out of scope for this pass** — "Find My Photos" stays a
-  mocked UI (`components/findme/FindMeSheet.tsx`), and moderation is
-  manual-only (owner hide/delete in `/dashboard`); nothing publishes to
-  `face_embeddings`/`face_search_requests`.
+- **AI features (face recognition, AI content moderation) are intentionally
+  not part of this product** — removed entirely (no "Find My Photos" UI, no
+  `face_embeddings`/`face_search_requests` tables, no `allow_face_search`
+  setting). Moderation is manual-only (owner hide/delete in the dashboard).
+- **Billing is schema-level only, no real payments** — `subscriptions.plan`
+  (`free`/`pro`, see `lib/plans.ts`) gates gallery-count and storage limits
+  in code; there's no Stripe/checkout integration.
 - Known limitation: only `privacy: 'public'` galleries have a real secure
   RLS read path today — `'private'`/`'password'` privacy modes aren't
   enforced yet (flagged in the dashboard's Gallery Settings panel).
@@ -66,36 +69,62 @@ exists as a reference/seed shape but is no longer read by any page.
   `POST /api/guest-sessions` so it can be referenced by other tables' FKs.
 - **Guestbook**, **Voice Guestbook** (MediaRecorder API, 60s cap, playback,
   re-record, uploaded to Storage), **Photo Hunt** (categorized challenges,
-  per-guest progress via `hunt_submissions`, capture-to-complete flow),
-  **Find My Photos** (intentionally mocked — see Phase 3 note above), and
+  per-guest progress via `hunt_submissions`, capture-to-complete flow), and
   **Order of the Day** schedule.
 - **Sharing & QR codes**: copy link, WhatsApp share, native Web Share API,
   QR code generation with PNG/SVG download, and a printable "wedding card"
-  PDF (name, date, QR, instructions) via `jspdf`.
+  PDF (name, date, QR, instructions) via `jspdf`. Each gallery gets a
+  `qr_codes` row on creation (`app/api/galleries/route.ts`).
 - **Mobile bottom navigation** (Upload / Guestbook / Hunt / Voice / More)
   with `env(safe-area-inset-bottom)` handling; a "More" sheet surfaces
-  Order of the Day, Find My Photos, Jump to Gallery, View All, Share.
-- **Admin dashboard** (`/dashboard`): real stats from Supabase
-  (photos/videos/guests/messages/voice/storage/hunt completion), media grid
-  with select/hide/delete/bulk actions wired to `/api/galleries/[id]/media/bulk`,
-  a gallery settings panel wired to `PATCH /api/galleries/[id]/settings`,
-  and a streaming ZIP export (`GET /api/galleries/[id]/export`).
+  Order of the Day, Jump to Gallery, View All, Share.
+- **Multi-gallery owner dashboard** (`/dashboard`): lists all of an owner's
+  galleries (auto-redirects straight to the single gallery's detail page
+  when there's only one), with a plan/usage card (`lib/plans.ts`, see
+  billing below). Each gallery has its own
+  `/dashboard/galleries/[galleryId]/...` detail page with real stats
+  (photos/videos/guests/messages/voice/storage/hunt completion), a media
+  grid with select/hide/delete/bulk actions
+  (`/api/galleries/[id]/media/bulk`), a gallery settings panel
+  (`PATCH /api/galleries/[id]/settings`), an Order of the Day editor
+  (`.../schedule`), a QR card customizer (`.../qr-card`), an analytics page
+  (`.../analytics`, see below), and a background ZIP export.
+- **Analytics** (`.../analytics`): every guest action (`gallery_view`,
+  `upload_started`/`upload_completed`, `guestbook_message`,
+  `voice_message`, `media_viewed`/`media_downloaded`, `hunt_started`/
+  `hunt_completed`) is recorded to `analytics_events`
+  (`lib/track-event.ts` client-side, direct inserts server-side). The
+  dashboard page (`lib/data/analytics.ts` + `AnalyticsView.tsx`) aggregates
+  these into stat cards, a 14-day daily-views chart, and a most-active-
+  contributors leaderboard.
+- **Schema-level billing** (`lib/plans.ts`): every new owner gets a
+  `subscriptions` row (`free` plan) on signup. `PLAN_LIMITS` gates gallery
+  count (enforced in `POST /api/galleries`) and total storage bytes
+  (enforced in `request-upload`) per plan — no real payment processor is
+  wired up, this is limits-in-code only.
+- **Background ZIP export**: `GET /api/galleries/[id]/export` enqueues a
+  `zip_export_jobs` row instead of streaming synchronously. A Postgres
+  `pg_cron` schedule hits `/api/cron/process-zip-jobs` every 2 minutes,
+  which claims a job (`claim_next_zip_job()`, `for update skip locked`),
+  builds the ZIP (`lib/zip-export.ts`), uploads it to Storage, and stores a
+  signed download URL on the job row. The dashboard polls
+  `/api/galleries/[id]/export/[jobId]` and swaps in the real download link
+  once ready.
 - **PWA**: web manifest (`app/manifest.ts`), install-to-home-screen icons,
   and a service worker that caches the app shell for offline navigation.
 - **Owner auth**: email/password via Supabase Auth (`/login`, `/signup`),
   session refresh + route protection in `proxy.ts` (this Next.js version
   renamed `middleware.ts` → `proxy.ts`).
 
-### Not implemented (Phase 3, intentionally out of scope this pass)
+### Not implemented
 
-Real AI face recognition (embedding + vector search — `face_embeddings`/
-`face_search_requests` stay empty), AI content moderation (moderation is
-manual-only via the dashboard), AI duplicate detection, AI highlights/reels,
-and a background-job ZIP export for very large galleries (today's export is
-a synchronous streaming response, fine for one event's worth of media —
-see the export route's comments for the pgmq/pg_cron upgrade path).
-Private/password-protected galleries also aren't enforced at the RLS layer
-yet — only `privacy: 'public'` has a secure read path.
+AI features (face recognition, AI content moderation, duplicate detection,
+highlights/reels) were deliberately removed from the product entirely —
+not deferred, not mocked. Also not implemented, by explicit choice for this
+pass: real payment processing (Stripe/checkout — billing is schema-level
+limits only, see above), real malware/virus scanning on uploads, and
+enforcement of `'private'`/`'password'` gallery privacy modes at the RLS
+layer (only `privacy: 'public'` has a secure read path today).
 
 ## Design system
 
@@ -160,19 +189,30 @@ python3 .claude/skills/ui-ux-pro-max/scripts/search.py "<query>" --design-system
 app/
   page.tsx                 marketing landing page
   g/[slug]/                public gallery (page.tsx + GalleryApp.tsx client shell)
-  dashboard/                owner dashboard
+  dashboard/
+    page.tsx                gallery list / auto-redirect-if-one
+    galleries/[galleryId]/
+      page.tsx + DashboardApp.tsx        gallery detail (stats, media, export)
+      schedule/                          Order of the Day editor
+      qr-card/                           QR wedding-card customizer
+      analytics/                         AnalyticsView.tsx — stat cards, chart, leaderboard
   login/ signup/            owner auth pages
   auth/callback/            Supabase Auth email-confirmation callback
   create/                   owner-only gallery creation wizard
-  api/                      Route Handlers — guest writes (admin client) +
-                             owner-only mutations (cookie-aware client, RLS)
+  api/
+    galleries/               gallery CRUD, settings, media, guestbook, voice-messages,
+                              export (enqueue) + export/[jobId] (poll), analytics (client events)
+    cron/process-zip-jobs/   background ZIP-export worker (bearer-secret protected)
+    hunt/[challengeId]/submissions/
+    media/[mediaId]/complete/
+    guest-sessions/
   manifest.ts               PWA manifest
 proxy.ts                    session refresh + /dashboard,/create auth gate
                             (this Next.js version renamed middleware.ts)
 components/
   gallery/                 hero, category nav, masonry grid, media viewer, bottom nav
   upload/                  Share Your Memories sheet + progress list
-  guestbook/ voice/ hunt/ findme/ schedule/ share/   feature sheets
+  guestbook/ voice/ hunt/ schedule/ share/   feature sheets
   sheets/                  shared BottomSheet primitive
 lib/
   types.ts                 domain types mirroring db/schema.sql
@@ -184,12 +224,20 @@ lib/
   video-poster.ts          client-side video poster-frame + duration capture
   image-dimensions.ts      client-side photo dimension probe
   realtime/useGalleryRealtime.ts   live new-media updates via Supabase Realtime
-  data/                    server-side Supabase queries (galleries, gallery content, dashboard)
+  data/                    server-side Supabase queries
+    galleries.ts             public gallery + content reads
+    dashboard.ts             owner gallery list/detail/stats + plan usage
+    schedule.ts               Order of the Day, parameterized by galleryId
+    analytics.ts              analytics_events aggregation for the dashboard
+  plans.ts                 PLAN_LIMITS + getOwnerPlan() — schema-level billing
+  zip-export.ts            buildGalleryZip() — shared by the export worker
+  track-event.ts           client helper for POST /api/galleries/[id]/analytics
   qr.ts                    QR code + wedding card generation
 db/
   schema.sql               base Postgres/Supabase schema
 supabase/
-  migrations/              RLS policies, indexes, realtime publication, storage bucket
+  migrations/              RLS policies, indexes, realtime publication, storage bucket,
+                            zip_export_jobs + claim_next_zip_job(), pg_cron/pg_net
 scripts/
   seed-demo-gallery.mjs    seeds the owner account + "demo" gallery
 public/
@@ -199,7 +247,7 @@ lib/supabase/
   server.ts                server-component/action/Route Handler client (cookie-aware, RLS)
   admin.ts                 service-role client — server-only, bypasses RLS
   middleware.ts            @supabase/ssr session-refresh helper, used by proxy.ts
-  storage.ts               Storage bucket/path helpers
+  storage.ts               Storage bucket/path helpers + storagePathFromPublicUrl()
   env.ts                   isSupabaseConfigured() feature-flag check
 ```
 
@@ -207,11 +255,14 @@ lib/supabase/
 
 - `/create` — a 3-step form (auth-gated by `proxy.ts`) that `POST`s to
   `/api/galleries`, which inserts the gallery + settings + default albums
-  scoped to the signed-in owner, then redirects to the live `/g/[slug]`.
-- `/dashboard/qr-card?slug=<slug>` — customize the printable QR wedding
-  card (names, date, tagline, typography, colors, QR size, logo) with a
-  live preview, then export PDF/PNG/SVG. `lib/qr.ts#generateWeddingCardPdf`
-  is the reusable builder both this page and the gallery's Share sheet call.
+  scoped to the signed-in owner (subject to the plan's `maxGalleries`
+  limit), inserts a `qr_codes` row, then redirects to the live `/g/[slug]`.
+- `/dashboard/galleries/[galleryId]/qr-card` — customize the printable QR
+  wedding card (names, date, tagline, typography, colors, QR size, logo)
+  with a live preview, then export PDF/PNG/SVG.
+  `lib/qr.ts#generateWeddingCardPdf` is the reusable builder both this page
+  and the gallery's Share sheet call. Resolved via `getOwnerGalleryBasic`
+  (RLS-scoped to the signed-in owner), not the public slug lookup.
 
 ## Security model
 
@@ -226,3 +277,16 @@ lib/supabase/
 - The `media` Storage bucket is public-read (guests browse without auth)
   but write-only via signed upload URLs minted server-side per upload —
   there's no anon Storage write policy.
+- `galleries`' public-read policy and `gallery_settings`' owner policy used
+  to reference each other, which is a real mutual-recursion cycle Postgres
+  can hit on a full-table-scan query (it never showed up on single-row
+  lookups). Fixed with a `security definer` helper, `gallery_is_public()`
+  (`supabase/migrations/00009_fix_galleries_rls_recursion.sql`), that
+  breaks the cycle instead of re-entering RLS.
+- `zip_export_jobs` is owner-scoped RLS like everything else; the actual
+  dequeue (`claim_next_zip_job()`) and the cron worker route run as
+  service-role, with `execute` on the function revoked from
+  `anon`/`authenticated` and granted only to `service_role`. The cron
+  route itself checks a bearer secret (`CRON_SECRET`, stored in Supabase
+  Vault for the `pg_cron` job and in Vercel env vars for the route) before
+  doing anything.

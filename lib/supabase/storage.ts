@@ -18,6 +18,19 @@ export function getPublicMediaUrl(path: string) {
   return `${base}/storage/v1/object/public/${MEDIA_BUCKET}/${path}`;
 }
 
+// Inverse of getPublicMediaUrl. Storage paths themselves contain the
+// literal segment "media/" (see buildOriginalPath/buildPosterPath above),
+// which also happens to be the bucket name — splitting on "/media/"
+// generically would match that inner segment instead of the bucket
+// boundary. Strip the exact, known prefix instead.
+export function storagePathFromPublicUrl(url: string): string | null {
+  const prefix = `/storage/v1/object/public/${MEDIA_BUCKET}/`;
+  const pathname = new URL(url).pathname;
+  const idx = pathname.indexOf(prefix);
+  if (idx === -1) return null;
+  return decodeURIComponent(pathname.slice(idx + prefix.length));
+}
+
 export function extFromMimeOrName(mimeType: string, fileName: string) {
   const fromName = fileName.split(".").pop();
   if (fromName && fromName.length <= 5) return fromName.toLowerCase();

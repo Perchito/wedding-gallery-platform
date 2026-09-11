@@ -13,7 +13,6 @@
 -- ---------------------------------------------------------------------------
 
 create extension if not exists "uuid-ossp";
-create extension if not exists vector; -- for face embeddings (pgvector)
 
 -- ---------------------------------------------------------------------------
 -- Users / accounts (gallery owners)
@@ -59,7 +58,6 @@ create table gallery_settings (
   allow_guestbook boolean not null default true,
   allow_voice_messages boolean not null default true,
   allow_photo_hunt boolean not null default true,
-  allow_face_search boolean not null default true,
   privacy text not null default 'public' check (privacy in ('public', 'private', 'password')),
   password_hash text
 );
@@ -119,7 +117,7 @@ create table media_processing_jobs (
   job_type text not null check (
     job_type in (
       'thumbnail', 'web_image', 'full_image', 'video_thumbnail',
-      'video_metadata', 'ai_moderation', 'face_recognition'
+      'video_metadata', 'ai_moderation'
     )
   ),
   status text not null default 'pending' check (status in ('pending', 'running', 'done', 'failed')),
@@ -196,34 +194,6 @@ create table hunt_submissions (
 );
 
 -- ---------------------------------------------------------------------------
--- AI face recognition ("Find My Photos")
--- ---------------------------------------------------------------------------
-create table face_embeddings (
-  id uuid primary key default uuid_generate_v4(),
-  media_id uuid not null references media(id) on delete cascade,
-  face_index int not null default 0,
-  embedding vector(512),
-  bbox_x numeric,
-  bbox_y numeric,
-  bbox_width numeric,
-  bbox_height numeric,
-  created_at timestamptz not null default now()
-);
-
-create index on face_embeddings using ivfflat (embedding vector_cosine_ops);
-
--- Selfie embeddings are short-lived: store only long enough to run the
--- similarity search, then delete (see README "Face search privacy").
-create table face_search_requests (
-  id uuid primary key default uuid_generate_v4(),
-  gallery_id uuid not null references galleries(id) on delete cascade,
-  guest_session_id uuid references guest_sessions(id) on delete set null,
-  selfie_embedding vector(512),
-  created_at timestamptz not null default now(),
-  expires_at timestamptz not null default now() + interval '1 hour'
-);
-
--- ---------------------------------------------------------------------------
 -- Event schedule ("Order of the Day")
 -- ---------------------------------------------------------------------------
 create table event_schedule (
@@ -256,7 +226,7 @@ create table analytics_events (
     event_type in (
       'gallery_view', 'upload_started', 'upload_completed', 'media_viewed',
       'media_downloaded', 'guestbook_message', 'voice_message',
-      'hunt_started', 'hunt_completed', 'face_search'
+      'hunt_started', 'hunt_completed'
     )
   ),
   metadata jsonb,

@@ -10,7 +10,6 @@ interface GalleryHeroProps {
   photoCount: number;
   videoCount: number;
   onShare: () => void;
-  onFindMe: () => void;
   onGuestbook: () => void;
   onVoice: () => void;
 }
@@ -20,7 +19,6 @@ export function GalleryHero({
   photoCount,
   videoCount,
   onShare,
-  onFindMe,
   onGuestbook,
   onVoice,
 }: GalleryHeroProps) {
@@ -71,8 +69,7 @@ export function GalleryHero({
             <Camera size={18} />
             Share Your Memories
           </button>
-          <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2">
-            <SecondaryAction icon={<Camera size={16} />} label="Find Me" onClick={onFindMe} />
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
             <SecondaryAction icon={<BookHeart size={16} />} label="Guestbook" onClick={onGuestbook} />
             <SecondaryAction icon={<Mic size={16} />} label="Voice" onClick={onVoice} />
           </div>

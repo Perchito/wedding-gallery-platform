@@ -41,9 +41,6 @@ const VoiceSheet = dynamic(() =>
 const HuntSheet = dynamic(() =>
   import("@/components/hunt/HuntSheet").then((m) => m.HuntSheet)
 );
-const FindMeSheet = dynamic(() =>
-  import("@/components/findme/FindMeSheet").then((m) => m.FindMeSheet)
-);
 const ShareSheet = dynamic(() =>
   import("@/components/share/ShareSheet").then((m) => m.ShareSheet)
 );
@@ -53,7 +50,6 @@ type SheetId =
   | "guestbook"
   | "voice"
   | "hunt"
-  | "findme"
   | "schedule"
   | "share"
   | "more"
@@ -202,7 +198,6 @@ export function GalleryApp({
         photoCount={counts.photos}
         videoCount={counts.videos}
         onShare={() => setSheet("upload")}
-        onFindMe={() => setSheet("findme")}
         onGuestbook={() => setSheet("guestbook")}
         onVoice={() => setSheet("voice")}
       />
@@ -235,6 +230,8 @@ export function GalleryApp({
           onIndexChange={setViewerIndex}
           onToggleLike={handleToggleLike}
           canDownload={gallery.settings.allowDownloads}
+          galleryId={gallery.id}
+          guestSessionId={guestSessionId}
         />
       )}
 
@@ -279,17 +276,11 @@ export function GalleryApp({
         challenges={huntChallenges}
         completed={huntCompleted}
         onComplete={handleHuntComplete}
+        galleryId={gallery.id}
         gallerySlug={gallery.slug}
         defaultAlbumId={albums[0]?.id ?? ""}
         guestSessionId={guestSessionId}
         guestName={guestName}
-      />
-
-      <FindMeSheet
-        open={sheet === "findme"}
-        onClose={() => setSheet(null)}
-        allMedia={media}
-        onOpenResult={openViewerFor}
       />
 
       <ScheduleSheet
@@ -310,7 +301,6 @@ export function GalleryApp({
         open={sheet === "more"}
         onClose={() => setSheet(null)}
         onSchedule={() => setSheet("schedule")}
-        onFindMe={() => setSheet("findme")}
         onViewAll={() => setActiveCategory("all")}
         onJumpToGallery={() =>
           galleryGridRef.current?.scrollIntoView({ behavior: "smooth" })

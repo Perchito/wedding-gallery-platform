@@ -11,6 +11,7 @@ import {
   Share2,
 } from "lucide-react";
 import type { MediaItem } from "@/lib/types";
+import { trackEvent } from "@/lib/track-event";
 
 interface MediaViewerProps {
   items: MediaItem[];
@@ -19,6 +20,8 @@ interface MediaViewerProps {
   onIndexChange: (index: number) => void;
   onToggleLike: (id: string) => void;
   canDownload: boolean;
+  galleryId: string;
+  guestSessionId: string;
 }
 
 export function MediaViewer({
@@ -28,12 +31,20 @@ export function MediaViewer({
   onIndexChange,
   onToggleLike,
   canDownload,
+  galleryId,
+  guestSessionId,
 }: MediaViewerProps) {
   const item = items[index];
   const touchStartX = useRef<number | null>(null);
   const [scale, setScale] = useState(1);
   const [prevIndex, setPrevIndex] = useState(index);
   const pinchStartDist = useRef<number | null>(null);
+
+  // Once per viewer open (not per swipe) — matches spec section 37's
+  // "media viewed" analytics event.
+  useEffect(() => {
+    trackEvent(galleryId, "media_viewed", guestSessionId);
+  }, [galleryId, guestSessionId]);
 
   // Reset zoom when navigating to a different item — adjusted during render
   // rather than in an effect, per https://react.dev/learn/you-might-not-need-an-effect
@@ -129,6 +140,7 @@ export function MediaViewer({
               href={item.originalUrl}
               download
               aria-label="Download"
+              onClick={() => trackEvent(galleryId, "media_downloaded", guestSessionId, { mediaId: item.id })}
               className="rounded-full p-2 hover:bg-white/10"
             >
               <Download size={20} />
@@ -157,7 +169,7 @@ export function MediaViewer({
         {item.type === "video" ? (
           <video
             key={item.id}
-            src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+            src={item.originalUrl}
             poster={item.previewUrl}
             controls
             playsInline

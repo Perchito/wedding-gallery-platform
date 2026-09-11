@@ -21,7 +21,6 @@ export interface GallerySettings {
   allowGuestbook: boolean;
   allowVoiceMessages: boolean;
   allowPhotoHunt: boolean;
-  allowFaceSearch: boolean;
   privacy: "public" | "private" | "password";
 }
 

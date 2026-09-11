@@ -1,13 +1,12 @@
 "use client";
 
-import { CalendarClock, ScanFace, Images, ArrowUpToLine, Share2 } from "lucide-react";
+import { CalendarClock, Images, ArrowUpToLine, Share2 } from "lucide-react";
 import { BottomSheet } from "@/components/sheets/BottomSheet";
 
 interface MoreMenuSheetProps {
   open: boolean;
   onClose: () => void;
   onSchedule: () => void;
-  onFindMe: () => void;
   onViewAll: () => void;
   onJumpToGallery: () => void;
   onShare: () => void;
@@ -17,14 +16,12 @@ export function MoreMenuSheet({
   open,
   onClose,
   onSchedule,
-  onFindMe,
   onViewAll,
   onJumpToGallery,
   onShare,
 }: MoreMenuSheetProps) {
   const items = [
     { icon: <CalendarClock size={18} />, label: "Order of the Day", onClick: onSchedule },
-    { icon: <ScanFace size={18} />, label: "Find My Photos", onClick: onFindMe },
     { icon: <ArrowUpToLine size={18} />, label: "Jump to Gallery", onClick: onJumpToGallery },
     { icon: <Images size={18} />, label: "View All Photos", onClick: onViewAll },
     { icon: <Share2 size={18} />, label: "Share Gallery", onClick: onShare },

@@ -15,9 +15,11 @@ import {
   EyeOff,
   Trash2,
   Download,
+  Loader2,
   ExternalLink,
   CalendarClock,
   QrCode,
+  BarChart3,
 } from "lucide-react";
 import { cn, formatEventDate } from "@/lib/utils";
 import type { Gallery, GalleryStats, GallerySettings, MediaItem } from "@/lib/types";
@@ -28,10 +30,15 @@ interface DashboardAppProps {
   initialMedia: MediaItem[];
 }
 
+type ExportState = "idle" | "pending" | "done" | "failed";
+
 export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps) {
   const [media, setMedia] = useState(initialMedia);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [settings, setSettings] = useState<GallerySettings>(gallery.settings);
+  const [exportState, setExportState] = useState<ExportState>("idle");
+  const [exportUrl, setExportUrl] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const allSelected = selected.size > 0 && selected.size === media.length;
 
@@ -103,6 +110,41 @@ export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps
     }).catch(() => {});
   }
 
+  async function startExport() {
+    setExportState("pending");
+    setExportError(null);
+    setExportUrl(null);
+    try {
+      const res = await fetch(`/api/galleries/${gallery.id}/export`);
+      if (!res.ok) throw new Error((await res.json()).error || "Failed to start export");
+      const { jobId } = await res.json();
+
+      // The background worker runs on a ~2 minute cron tick, so this can
+      // take a little while — poll rather than block on one long request.
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await new Promise((r) => setTimeout(r, 5000));
+        const statusRes = await fetch(`/api/galleries/${gallery.id}/export/${jobId}`);
+        if (!statusRes.ok) continue;
+        const job = await statusRes.json();
+        if (job.status === "done") {
+          setExportState("done");
+          setExportUrl(job.downloadUrl);
+          return;
+        }
+        if (job.status === "failed") {
+          setExportState("failed");
+          setExportError(job.error || "Export failed");
+          return;
+        }
+      }
+      setExportState("failed");
+      setExportError("Export is taking longer than expected — try again shortly.");
+    } catch (err) {
+      setExportState("failed");
+      setExportError(err instanceof Error ? err.message : "Failed to start export");
+    }
+  }
+
   const statCards = useMemo(
     () => [
       { icon: <Images size={18} />, label: "Photos", value: stats.photos },
@@ -119,6 +161,9 @@ export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps
 
   return (
     <div className="mx-auto max-w-5xl px-5 py-8 sm:px-8">
+      <Link href="/dashboard" className="mb-3 inline-block text-sm font-medium text-ink-muted hover:text-blush-dark">
+        &larr; All galleries
+      </Link>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
@@ -131,13 +176,19 @@ export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/dashboard/schedule"
+            href={`/dashboard/galleries/${gallery.id}/analytics`}
+            className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40"
+          >
+            <BarChart3 size={14} /> Analytics
+          </Link>
+          <Link
+            href={`/dashboard/galleries/${gallery.id}/schedule`}
             className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40"
           >
             <CalendarClock size={14} /> Order of the Day
           </Link>
           <Link
-            href={`/dashboard/qr-card?slug=${gallery.slug}`}
+            href={`/dashboard/galleries/${gallery.id}/qr-card`}
             className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40"
           >
             <QrCode size={14} /> QR Card
@@ -217,12 +268,38 @@ export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps
           })}
         </div>
         <p className="mt-2 text-xs text-ink-muted">Showing 24 of {media.length} items.</p>
-        <a
-          href={`/api/galleries/${gallery.id}/export`}
-          className="mt-3 flex w-fit items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40"
-        >
-          <Download size={14} /> Download Gallery (ZIP)
-        </a>
+        {exportState === "done" && exportUrl ? (
+          <a
+            href={exportUrl}
+            className="mt-3 flex w-fit items-center gap-1.5 rounded-full bg-blush-dark px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            <Download size={14} /> Download ready — click to save
+          </a>
+        ) : (
+          <button
+            onClick={startExport}
+            disabled={exportState === "pending"}
+            className="mt-3 flex w-fit items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium hover:border-blush-dark/40 disabled:opacity-60"
+          >
+            {exportState === "pending" ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Preparing ZIP…
+              </>
+            ) : (
+              <>
+                <Download size={14} /> Download Gallery (ZIP)
+              </>
+            )}
+          </button>
+        )}
+        {exportState === "pending" && (
+          <p className="mt-1.5 text-xs text-ink-muted">
+            Runs as a background job — this can take a minute or two for larger galleries.
+          </p>
+        )}
+        {exportState === "failed" && exportError && (
+          <p className="mt-1.5 text-xs text-red-600">{exportError}</p>
+        )}
       </section>
 
       <section className="mt-10">
@@ -236,7 +313,6 @@ export function DashboardApp({ gallery, stats, initialMedia }: DashboardAppProps
               ["allowGuestbook", "Allow guestbook"],
               ["allowVoiceMessages", "Allow voice messages"],
               ["allowPhotoHunt", "Allow Photo Hunt"],
-              ["allowFaceSearch", "Allow face search"],
             ] as [keyof GallerySettings, string][]
           ).map(([key, label]) => (
             <label

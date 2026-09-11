@@ -88,7 +88,7 @@ export function ScheduleManager({ galleryId, gallerySlug, eventName, entries: in
   return (
     <div className="mx-auto max-w-2xl px-5 py-8 sm:px-8">
       <Link
-        href="/dashboard"
+        href={`/dashboard/galleries/${galleryId}`}
         className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted hover:text-blush-dark"
       >
         <ArrowLeft size={14} /> Back to dashboard

@@ -8,7 +8,7 @@ export interface OwnerScheduleData {
   entries: ScheduleEntry[];
 }
 
-export async function getOwnerSchedule(): Promise<OwnerScheduleData | null> {
+export async function getOwnerSchedule(galleryId: string): Promise<OwnerScheduleData | null> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -18,9 +18,7 @@ export async function getOwnerSchedule(): Promise<OwnerScheduleData | null> {
   const { data: gallery } = await supabase
     .from("galleries")
     .select("id, slug, event_name")
-    .eq("owner_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
+    .eq("id", galleryId)
     .maybeSingle();
   if (!gallery) return null;
 

@@ -4,6 +4,7 @@ import { GalleryResolver } from "./GalleryResolver";
 import { getGalleryFromSupabase } from "@/lib/data/galleries";
 import { getGalleryContent } from "@/lib/data/gallery-content";
 import { CATEGORIES } from "@/lib/mock-data";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function generateMetadata({
   params,
@@ -32,6 +33,17 @@ export default async function GalleryPage({
   }
 
   const content = await getGalleryContent(gallery.id);
+
+  // Fire-and-forget — a slow/failed analytics insert should never block the
+  // page render. Guest session id isn't known yet at this point (minted
+  // client-side on mount), so this row has no guest_session_id.
+  createSupabaseAdminClient()
+    .from("analytics_events")
+    .insert({ gallery_id: gallery.id, event_type: "gallery_view" })
+    .then(
+      () => {},
+      () => {}
+    );
 
   return (
     <GalleryApp

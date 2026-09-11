@@ -121,6 +121,13 @@ export async function POST(
       { onConflict: "gallery_id" }
     );
 
+  await supabase.from("analytics_events").insert({
+    gallery_id: galleryId,
+    guest_session_id: guestSessionId,
+    event_type: "upload_completed",
+    metadata: { mediaType, fileSize },
+  });
+
   return NextResponse.json({
     id: mediaId,
     galleryId,

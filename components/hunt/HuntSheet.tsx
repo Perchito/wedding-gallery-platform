@@ -5,6 +5,7 @@ import { CheckCircle2, Camera, Images, ChevronLeft, Loader2 } from "lucide-react
 import { BottomSheet } from "@/components/sheets/BottomSheet";
 import { cn } from "@/lib/utils";
 import { uploadMedia } from "@/lib/upload-media";
+import { trackEvent } from "@/lib/track-event";
 import type { HuntCategory, HuntChallenge, MediaItem } from "@/lib/types";
 
 interface HuntSheetProps {
@@ -14,6 +15,7 @@ interface HuntSheetProps {
   challenges: HuntChallenge[];
   completed: Set<string>;
   onComplete: (challengeId: string, media: MediaItem) => void;
+  galleryId: string;
   gallerySlug: string;
   defaultAlbumId: string;
   guestSessionId: string;
@@ -27,6 +29,7 @@ export function HuntSheet({
   challenges,
   completed,
   onComplete,
+  galleryId,
   gallerySlug,
   defaultAlbumId,
   guestSessionId,
@@ -141,7 +144,11 @@ export function HuntSheet({
                   return (
                     <button
                       key={ch.id}
-                      onClick={() => !isDone && setActive(ch)}
+                      onClick={() => {
+                        if (isDone) return;
+                        trackEvent(galleryId, "hunt_started", guestSessionId, { challengeId: ch.id });
+                        setActive(ch);
+                      }}
                       className={cn(
                         "flex items-center justify-between rounded-xl border px-3 py-3 text-left",
                         isDone

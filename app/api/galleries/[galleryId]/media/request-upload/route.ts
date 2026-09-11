@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { checkGalleryAllowsGuestWrite } from "@/lib/guest-write-guard";
 import { MEDIA_BUCKET, buildOriginalPath, buildPosterPath, extFromMimeOrName } from "@/lib/supabase/storage";
+import { getOwnerPlan, PLAN_LIMITS } from "@/lib/plans";
 
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 const MAX_PHOTO_BYTES = 50 * 1024 * 1024;
@@ -46,7 +47,7 @@ export async function POST(
 
   const { data: gallery, error: galleryError } = await supabase
     .from("galleries")
-    .select("id")
+    .select("id, owner_id")
     .eq("slug", gallerySlug)
     .maybeSingle();
 
@@ -57,6 +58,19 @@ export async function POST(
   const guard = await checkGalleryAllowsGuestWrite(supabase, gallery.id, "allow_uploads");
   if (!guard.ok) {
     return NextResponse.json({ error: guard.error }, { status: guard.status });
+  }
+
+  const plan = await getOwnerPlan(supabase, gallery.owner_id);
+  const { data: usage } = await supabase
+    .from("storage_usage")
+    .select("bytes_used")
+    .eq("gallery_id", gallery.id)
+    .maybeSingle();
+  if ((usage?.bytes_used ?? 0) + fileSize > PLAN_LIMITS[plan].maxStorageBytes) {
+    return NextResponse.json(
+      { error: `This gallery has reached its ${plan} plan storage limit.` },
+      { status: 413 }
+    );
   }
 
   const mediaId = randomUUID();
@@ -84,6 +98,13 @@ export async function POST(
       posterUpload = { path: posterPath, token: posterSigned.token, signedUrl: posterSigned.signedUrl };
     }
   }
+
+  await supabase.from("analytics_events").insert({
+    gallery_id: gallery.id,
+    guest_session_id: guestSessionId,
+    event_type: "upload_started",
+    metadata: { isVideo, fileSize },
+  });
 
   return NextResponse.json({
     mediaId,

@@ -9,7 +9,6 @@ const FIELD_MAP: Record<keyof GallerySettings, string> = {
   allowGuestbook: "allow_guestbook",
   allowVoiceMessages: "allow_voice_messages",
   allowPhotoHunt: "allow_photo_hunt",
-  allowFaceSearch: "allow_face_search",
   privacy: "privacy",
 };
 

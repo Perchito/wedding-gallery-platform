@@ -58,6 +58,13 @@ export async function POST(
     return NextResponse.json({ error: "Failed to record submission" }, { status: 500 });
   }
 
+  await supabase.from("analytics_events").insert({
+    gallery_id: challenge.gallery_id,
+    guest_session_id: guestSessionId,
+    event_type: "hunt_completed",
+    metadata: { challengeId },
+  });
+
   return NextResponse.json({
     challengeId: data.challenge_id,
     guestSessionId: data.guest_session_id,

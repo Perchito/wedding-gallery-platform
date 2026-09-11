@@ -41,7 +41,6 @@ export const DEMO_GALLERY: Gallery = {
     allowGuestbook: true,
     allowVoiceMessages: true,
     allowPhotoHunt: true,
-    allowFaceSearch: true,
     privacy: "public",
   },
   createdAt: "2026-01-05T10:00:00.000Z",

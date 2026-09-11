@@ -113,7 +113,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
             <DownloadChip label="Wedding Card PDF" onClick={handleDownloadPdfCard} />
           </div>
           <Link
-            href={`/dashboard/qr-card?slug=${gallery.slug}`}
+            href={`/dashboard/galleries/${gallery.id}/qr-card`}
             className="flex items-center gap-1.5 text-xs font-medium text-blush-dark hover:underline"
           >
             <Palette size={12} /> Customize the printable card

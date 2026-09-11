@@ -15,7 +15,7 @@ import {
 import type { Gallery } from "@/lib/types";
 
 interface QrCardCustomizerProps {
-  slug: string;
+  galleryId: string;
   serverGallery: Gallery | null;
 }
 
@@ -25,7 +25,7 @@ const FONT_OPTIONS: { id: CardFont; label: string; previewClass: string }[] = [
   { id: "courier", label: "Typewriter", previewClass: "font-mono" },
 ];
 
-export function QrCardCustomizer({ serverGallery }: QrCardCustomizerProps) {
+export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerProps) {
   const gallery = serverGallery;
 
   const [partnerA, setPartnerA] = useState("");
@@ -113,7 +113,7 @@ export function QrCardCustomizer({ serverGallery }: QrCardCustomizerProps) {
   return (
     <div className="mx-auto max-w-4xl px-5 py-8 sm:px-8">
       <Link
-        href="/dashboard"
+        href={`/dashboard/galleries/${galleryId}`}
         className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted hover:text-blush-dark"
       >
         <ArrowLeft size={14} /> Back to dashboard

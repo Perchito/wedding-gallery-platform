@@ -41,6 +41,12 @@ export async function POST(
     return NextResponse.json({ error: "Failed to send message" }, { status: 500 });
   }
 
+  await supabase.from("analytics_events").insert({
+    gallery_id: galleryId,
+    guest_session_id: guestSessionId ?? null,
+    event_type: "guestbook_message",
+  });
+
   return NextResponse.json({
     id: data.id,
     galleryId: data.gallery_id,

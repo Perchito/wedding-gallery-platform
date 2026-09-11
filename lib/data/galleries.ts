@@ -39,7 +39,6 @@ interface SettingsRow {
   allow_guestbook: boolean;
   allow_voice_messages: boolean;
   allow_photo_hunt: boolean;
-  allow_face_search: boolean;
   privacy: GallerySettings["privacy"];
 }
 
@@ -67,7 +66,6 @@ const DEFAULT_SETTINGS: GallerySettings = {
   allowGuestbook: true,
   allowVoiceMessages: true,
   allowPhotoHunt: true,
-  allowFaceSearch: true,
   privacy: "public",
 };
 
@@ -98,7 +96,6 @@ function mapRowToGallery(row: GalleryRow): Gallery {
           allowGuestbook: settingsRow.allow_guestbook,
           allowVoiceMessages: settingsRow.allow_voice_messages,
           allowPhotoHunt: settingsRow.allow_photo_hunt,
-          allowFaceSearch: settingsRow.allow_face_search,
           privacy: settingsRow.privacy,
         }
       : DEFAULT_SETTINGS,
