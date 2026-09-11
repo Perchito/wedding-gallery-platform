@@ -1,6 +1,6 @@
-import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { GalleryApp } from "./GalleryApp";
+import { GalleryResolver } from "./GalleryResolver";
 import {
   ALBUMS,
   CATEGORIES,
@@ -34,19 +34,35 @@ export default async function GalleryPage({
 }) {
   const { slug } = await params;
   const gallery = getGalleryBySlug(slug);
-  if (!gallery) notFound();
 
+  // Known server-side (currently just the "demo" gallery): render directly.
+  if (gallery) {
+    return (
+      <GalleryApp
+        gallery={gallery}
+        albums={ALBUMS}
+        categories={CATEGORIES}
+        initialMedia={MEDIA_ITEMS}
+        initialMessages={GUESTBOOK_MESSAGES}
+        initialVoiceMessages={VOICE_MESSAGES}
+        huntCategories={HUNT_CATEGORIES}
+        huntChallenges={HUNT_CHALLENGES}
+        schedule={SCHEDULE}
+      />
+    );
+  }
+
+  // Not a server-known gallery — it may be one created client-side via
+  // /create (stored in localStorage, see lib/created-galleries.ts).
+  // GalleryResolver checks for that after mount before showing not-found.
   return (
-    <GalleryApp
-      gallery={gallery}
+    <GalleryResolver
+      slug={slug}
+      serverGallery={null}
       albums={ALBUMS}
       categories={CATEGORIES}
-      initialMedia={MEDIA_ITEMS}
-      initialMessages={GUESTBOOK_MESSAGES}
-      initialVoiceMessages={VOICE_MESSAGES}
       huntCategories={HUNT_CATEGORIES}
       huntChallenges={HUNT_CHALLENGES}
-      schedule={SCHEDULE}
     />
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { GalleryHero } from "@/components/gallery/GalleryHero";
 import { CategoryNav } from "@/components/gallery/CategoryNav";
 import { MasonryGallery } from "@/components/gallery/MasonryGallery";
@@ -9,11 +10,7 @@ import { BottomNav, type BottomNavAction } from "@/components/gallery/BottomNav"
 import { MoreMenuSheet } from "@/components/gallery/MoreMenuSheet";
 import { UploadSheet } from "@/components/upload/UploadSheet";
 import { GuestbookSheet } from "@/components/guestbook/GuestbookSheet";
-import { VoiceSheet } from "@/components/voice/VoiceSheet";
-import { HuntSheet } from "@/components/hunt/HuntSheet";
-import { FindMeSheet } from "@/components/findme/FindMeSheet";
 import { ScheduleSheet } from "@/components/schedule/ScheduleSheet";
-import { ShareSheet } from "@/components/share/ShareSheet";
 import {
   getOrCreateGuestSession,
   updateGuestName,
@@ -32,6 +29,22 @@ import type {
   ScheduleEntry,
   VoiceMessage,
 } from "@/lib/types";
+
+// Code-split secondary features so their JS only loads once a guest opens
+// them (spec section 37: "do not load AI functionality, Photo Hunt, voice
+// recording ... until required").
+const VoiceSheet = dynamic(() =>
+  import("@/components/voice/VoiceSheet").then((m) => m.VoiceSheet)
+);
+const HuntSheet = dynamic(() =>
+  import("@/components/hunt/HuntSheet").then((m) => m.HuntSheet)
+);
+const FindMeSheet = dynamic(() =>
+  import("@/components/findme/FindMeSheet").then((m) => m.FindMeSheet)
+);
+const ShareSheet = dynamic(() =>
+  import("@/components/share/ShareSheet").then((m) => m.ShareSheet)
+);
 
 type SheetId =
   | "upload"

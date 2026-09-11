@@ -2,9 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Link2, MessageCircle, Share2, Download, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import { Link2, MessageCircle, Share2, Download, CheckCircle2, Palette } from "lucide-react";
 import { BottomSheet } from "@/components/sheets/BottomSheet";
-import { galleryQrPngDataUrl, galleryQrSvgString, downloadDataUrl, downloadBlob } from "@/lib/qr";
+import {
+  galleryQrPngDataUrl,
+  galleryQrSvgString,
+  downloadDataUrl,
+  downloadBlob,
+  generateWeddingCardPdf,
+} from "@/lib/qr";
 import { formatEventDate } from "@/lib/utils";
 import type { Gallery } from "@/lib/types";
 
@@ -64,39 +71,20 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
   }
 
   async function handleDownloadPdfCard() {
-    const [{ jsPDF }, pngUrl] = await Promise.all([
-      import("jspdf"),
-      galleryQrPngDataUrl(galleryUrl, 800),
-    ]);
-    const doc = new jsPDF({ unit: "mm", format: "a5" });
-    const pageW = doc.internal.pageSize.getWidth();
-
-    doc.setFillColor(255, 250, 246);
-    doc.rect(0, 0, pageW, doc.internal.pageSize.getHeight(), "F");
-
-    doc.setTextColor(36, 28, 25);
-    doc.setFont("times", "bold");
-    doc.setFontSize(26);
-    doc.text(`${gallery.partnerNames[0]} & ${gallery.partnerNames[1]}`, pageW / 2, 25, {
-      align: "center",
+    await generateWeddingCardPdf({
+      partnerA: gallery.partnerNames[0],
+      partnerB: gallery.partnerNames[1],
+      eventDateLabel: formatEventDate(gallery.eventDate),
+      galleryUrl,
+      tagline: "Share your memories",
+      instructions: "Scan to upload photos",
+      backgroundColor: "#fffaf6",
+      textColor: "#241c19",
+      accentColor: "#241c19",
+      font: "times",
+      qrSizeMm: 70,
+      fileName: `${gallery.slug}-wedding-card.pdf`,
     });
-
-    doc.setFont("times", "normal");
-    doc.setFontSize(13);
-    doc.text(formatEventDate(gallery.eventDate), pageW / 2, 34, { align: "center" });
-
-    const qrSize = 70;
-    doc.addImage(pngUrl, "PNG", (pageW - qrSize) / 2, 45, qrSize, qrSize);
-
-    doc.setFont("times", "bolditalic");
-    doc.setFontSize(15);
-    doc.text("Share your memories", pageW / 2, 128, { align: "center" });
-
-    doc.setFont("times", "normal");
-    doc.setFontSize(11);
-    doc.text("Scan to upload photos", pageW / 2, 136, { align: "center" });
-
-    doc.save(`${gallery.slug}-wedding-card.pdf`);
   }
 
   return (
@@ -124,6 +112,12 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
             <DownloadChip label="SVG" onClick={handleDownloadSvg} />
             <DownloadChip label="Wedding Card PDF" onClick={handleDownloadPdfCard} />
           </div>
+          <Link
+            href={`/dashboard/qr-card?slug=${gallery.slug}`}
+            className="flex items-center gap-1.5 text-xs font-medium text-blush-dark hover:underline"
+          >
+            <Palette size={12} /> Customize the printable card
+          </Link>
         </div>
       </div>
     </BottomSheet>

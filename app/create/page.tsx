@@ -1,0 +1,206 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Heart, Calendar, MapPin, Image as ImageIcon, ArrowRight, ArrowLeft } from "lucide-react";
+import { createGallery } from "@/lib/created-galleries";
+
+type Step = 1 | 2 | 3;
+
+export default function CreateGalleryPage() {
+  const router = useRouter();
+  const [step, setStep] = useState<Step>(1);
+  const [partnerA, setPartnerA] = useState("");
+  const [partnerB, setPartnerB] = useState("");
+  const [eventDate, setEventDate] = useState("");
+  const [venue, setVenue] = useState("");
+  const [heroImageUrl, setHeroImageUrl] = useState("");
+  const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const step1Valid = partnerA.trim() && partnerB.trim() && eventDate;
+
+  function handleCreate() {
+    setSubmitting(true);
+    const gallery = createGallery({
+      partnerA: partnerA.trim(),
+      partnerB: partnerB.trim(),
+      eventDate,
+      venue: venue.trim(),
+      heroImageUrl: heroImageUrl.trim(),
+      description: description.trim(),
+    });
+    router.push(`/g/${gallery.slug}?created=1`);
+  }
+
+  return (
+    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-6 py-16">
+      <div className="mb-8 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blush-dark">
+          Create Your Gallery
+        </p>
+        <h1 className="mt-2 font-display text-3xl font-semibold">
+          Let&apos;s set up your event
+        </h1>
+        <p className="mt-2 text-sm text-ink-muted">Step {step} of 3</p>
+        <div className="mx-auto mt-3 flex w-40 gap-1.5">
+          {[1, 2, 3].map((s) => (
+            <div
+              key={s}
+              className={`h-1.5 flex-1 rounded-full ${
+                s <= step ? "bg-blush-dark" : "bg-surface-muted"
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+        {step === 1 && (
+          <div className="flex flex-col gap-4">
+            <Field label="Partner 1's name" icon={<Heart size={16} />}>
+              <input
+                value={partnerA}
+                onChange={(e) => setPartnerA(e.target.value)}
+                placeholder="e.g. Mateo"
+                className="input-field"
+              />
+            </Field>
+            <Field label="Partner 2's name" icon={<Heart size={16} />}>
+              <input
+                value={partnerB}
+                onChange={(e) => setPartnerB(e.target.value)}
+                placeholder="e.g. Genesis"
+                className="input-field"
+              />
+            </Field>
+            <Field label="Event date" icon={<Calendar size={16} />}>
+              <input
+                type="date"
+                value={eventDate}
+                onChange={(e) => setEventDate(e.target.value)}
+                className="input-field"
+              />
+            </Field>
+            <Field label="Venue" icon={<MapPin size={16} />} optional>
+              <input
+                value={venue}
+                onChange={(e) => setVenue(e.target.value)}
+                placeholder="e.g. The Old Vineyard, Marbella"
+                className="input-field"
+              />
+            </Field>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="flex flex-col gap-4">
+            <Field label="Hero photo URL" icon={<ImageIcon size={16} />} optional>
+              <input
+                value={heroImageUrl}
+                onChange={(e) => setHeroImageUrl(e.target.value)}
+                placeholder="https://…"
+                className="input-field"
+              />
+            </Field>
+            <p className="-mt-2 text-xs text-ink-muted">
+              Leave blank and we&apos;ll use a placeholder until you upload real
+              photos.
+            </p>
+            <Field label="Welcome message" optional>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                placeholder="Thank you for celebrating with us!"
+                className="input-field"
+              />
+            </Field>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm font-medium text-ink-muted">Review</p>
+            <div className="rounded-xl bg-surface-muted p-4 text-sm">
+              <p className="font-display text-lg font-semibold">
+                {partnerA || "Partner 1"} &amp; {partnerB || "Partner 2"}
+              </p>
+              <p className="mt-1 text-ink-muted">
+                {eventDate || "No date set"}
+                {venue ? ` · ${venue}` : ""}
+              </p>
+              {description && <p className="mt-2">{description}</p>}
+            </div>
+            <p className="text-xs text-ink-muted">
+              You&apos;ll get a unique gallery link and QR code guests can scan to
+              start sharing photos immediately — no account required for
+              guests.
+            </p>
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-between gap-3">
+          {step > 1 ? (
+            <button
+              onClick={() => setStep((s) => (s - 1) as Step)}
+              className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm font-medium"
+            >
+              <ArrowLeft size={14} /> Back
+            </button>
+          ) : (
+            <span />
+          )}
+
+          {step < 3 ? (
+            <button
+              onClick={() => setStep((s) => (s + 1) as Step)}
+              disabled={step === 1 && !step1Valid}
+              className="flex items-center gap-1.5 rounded-full bg-blush-dark px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              Next <ArrowRight size={14} />
+            </button>
+          ) : (
+            <button
+              onClick={handleCreate}
+              disabled={submitting}
+              className="flex items-center gap-1.5 rounded-full bg-blush-dark px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {submitting ? "Creating…" : "Create Gallery"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <p className="mt-6 text-center text-xs text-ink-muted">
+        This demo saves your gallery in this browser only (no account yet) —
+        see the README for wiring up real, shared storage.
+      </p>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  icon,
+  optional,
+  children,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  optional?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block text-sm font-medium">
+      <span className="mb-1 flex items-center gap-1.5">
+        {icon && <span className="text-blush-dark">{icon}</span>}
+        {label}
+        {optional && (
+          <span className="font-normal text-ink-muted">(optional)</span>
+        )}
+      </span>
+      {children}
+    </label>
+  );
+}

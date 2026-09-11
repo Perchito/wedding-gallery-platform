@@ -16,12 +16,20 @@ export default function Home() {
         no app to download, no account to create. Try the live demo below.
       </p>
 
-      <Link
-        href="/g/demo"
-        className="mt-8 rounded-full bg-blush-dark px-6 py-3 font-semibold text-white shadow-lg shadow-blush-dark/20 transition hover:opacity-90"
-      >
-        View Demo Gallery — Mateo &amp; Genesis
-      </Link>
+      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+        <Link
+          href="/g/demo"
+          className="rounded-full bg-blush-dark px-6 py-3 font-semibold text-white shadow-lg shadow-blush-dark/20 transition hover:opacity-90"
+        >
+          View Demo Gallery — Mateo &amp; Genesis
+        </Link>
+        <Link
+          href="/create"
+          className="rounded-full border border-border px-6 py-3 font-semibold text-foreground transition hover:border-blush-dark/40"
+        >
+          Create Your Own Gallery
+        </Link>
+      </div>
 
       <div className="mt-14 grid max-w-3xl grid-cols-1 gap-6 text-left sm:grid-cols-3">
         <Feature

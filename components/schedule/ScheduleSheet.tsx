@@ -14,6 +14,17 @@ interface ScheduleSheetProps {
 export function ScheduleSheet({ open, onClose, eventDate, entries }: ScheduleSheetProps) {
   const sorted = entries.slice().sort((a, b) => a.sortOrder - b.sortOrder);
 
+  if (sorted.length === 0) {
+    return (
+      <BottomSheet open={open} onClose={onClose} title="Order of the Day" subtitle={formatEventDate(eventDate)}>
+        <p className="py-6 text-center text-sm text-ink-muted">
+          The couple hasn&apos;t published a schedule yet — check back closer to
+          the day.
+        </p>
+      </BottomSheet>
+    );
+  }
+
   return (
     <BottomSheet open={open} onClose={onClose} title="Order of the Day" subtitle={formatEventDate(eventDate)}>
       <div className="relative flex flex-col gap-5 pl-4">
