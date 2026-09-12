@@ -9,6 +9,21 @@ const DEFAULT_ALBUMS = [
   { name: "Couple", icon: "heart", sort_order: 3 },
 ];
 
+// Default Photo Hunt content from the product spec — a brand-new gallery
+// should open with a working hunt, not "0 of 0 shots found".
+const DEFAULT_HUNT: { category: string; title: string; prompt: string }[] = [
+  { category: "The Couple", title: "First Kiss", prompt: "Capture their first kiss!" },
+  { category: "The Couple", title: "First Dance", prompt: "Capture this moment!" },
+  { category: "The Couple", title: "Cutting the Cake", prompt: "Get the cake-cutting shot." },
+  { category: "The Couple", title: "Happy Tears", prompt: "Someone crying happy tears?" },
+  { category: "Ceremony", title: "Big Cheer", prompt: "Capture the crowd cheering." },
+  { category: "Food & Drink", title: "Glasses Raised", prompt: "A toast in progress!" },
+  { category: "Guests & Fun", title: "Best Dancer", prompt: "Who's owning the dance floor?" },
+  { category: "Guests & Fun", title: "The Speech", prompt: "Capture a speech moment." },
+  { category: "Details", title: "Golden Hour Shot", prompt: "Catch that golden-hour light." },
+  { category: "My Ideas", title: "Group Shot", prompt: "Round up a group photo!" },
+];
+
 function slugify(a: string, b: string) {
   const base = `${a}-${b}`
     .toLowerCase()
@@ -121,6 +136,38 @@ export async function POST(request: Request) {
       },
       { status: 500 }
     );
+  }
+
+  // Seed the default Photo Hunt so guests never open an empty "0 of 0"
+  // hunt on a brand-new gallery. Best-effort: this must NOT be able to
+  // break gallery creation — the owner can add challenges later instead.
+  try {
+    const categoryNames = [...new Set(DEFAULT_HUNT.map((h) => h.category))];
+    const { data: insertedCategories, error: categoryError } = await supabase
+      .from("hunt_categories")
+      .insert(
+        categoryNames.map((label, i) => ({ gallery_id: gallery.id, label, sort_order: i }))
+      )
+      .select("id, label");
+    if (categoryError) throw new Error(categoryError.message);
+
+    const categoryIdByLabel = new Map(
+      (insertedCategories ?? []).map((c: { id: string; label: string }) => [c.label, c.id])
+    );
+    const { error: huntError } = await supabase.from("hunt_challenges").insert(
+      DEFAULT_HUNT.map((h, i) => ({
+        gallery_id: gallery.id,
+        category_id: categoryIdByLabel.get(h.category) ?? null,
+        title: h.title,
+        prompt: h.prompt,
+        sort_order: i,
+      }))
+    );
+    if (huntError) {
+      console.error("[galleries] seeding hunt challenges failed:", huntError.message);
+    }
+  } catch (err) {
+    console.error("[galleries] seeding hunt content failed:", err);
   }
 
   const origin = request.headers.get("origin") ?? new URL(request.url).origin;
