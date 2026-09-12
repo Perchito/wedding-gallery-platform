@@ -42,6 +42,11 @@ export function VoiceSheet({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordedBlobRef = useRef<Blob | null>(null);
+  // The browser decides the actual container/codec (e.g. iOS Safari records
+  // audio/mp4, Chrome records audio/webm). The recorded blob MUST carry this
+  // real type — labeling mp4 data as webm makes Safari refuse to play it
+  // back and stores the upload under the wrong content type.
+  const mimeTypeRef = useRef<string>("audio/webm");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
 
@@ -61,10 +66,11 @@ export function VoiceSheet({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
+      mimeTypeRef.current = recorder.mimeType || "audio/webm";
       chunksRef.current = [];
       recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
       recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current });
         recordedBlobRef.current = blob;
         setAudioUrl(URL.createObjectURL(blob));
         stream.getTracks().forEach((t) => t.stop());
@@ -107,9 +113,17 @@ export function VoiceSheet({
     if (isPlaying) {
       el.pause();
     } else {
-      el.play();
+      el.play().catch(() => setIsPlaying(false));
     }
     setIsPlaying(!isPlaying);
+  }
+
+  function fileExtFromMime(mime: string) {
+    if (mime.includes("mp4")) return "m4a";
+    if (mime.includes("ogg")) return "ogg";
+    if (mime.includes("mpeg")) return "mp3";
+    if (mime.includes("wav")) return "wav";
+    return "webm";
   }
 
   async function handleSend() {
@@ -119,7 +133,11 @@ export function VoiceSheet({
     onGuestNameChange(name.trim());
     try {
       const formData = new FormData();
-      formData.append("audio", recordedBlobRef.current, "voice-message.webm");
+      formData.append(
+        "audio",
+        recordedBlobRef.current,
+        `voice-message.${fileExtFromMime(mimeTypeRef.current)}`
+      );
       formData.append("guestSessionId", guestSessionId);
       formData.append("guestName", name.trim());
       formData.append("durationSeconds", String(seconds));

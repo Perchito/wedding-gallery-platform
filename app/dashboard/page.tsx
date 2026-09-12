@@ -3,12 +3,40 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import { CalendarDays, MapPin, Plus } from "lucide-react";
 import { getOwnerGalleries, getOwnerPlanUsage } from "@/lib/data/dashboard";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatBytes } from "@/lib/plans";
 import { formatEventDate } from "@/lib/utils";
 
 export const metadata = { title: "Dashboard — Wedding Gallery Platform" };
 
 export default async function DashboardPage() {
+  // A missing session used to fall through to the "No gallery yet" state —
+  // which incorrectly tells an existing owner their gallery is gone (e.g.
+  // stale tab, PWA cache, or a login completed in a different browser
+  // context). Distinguish the two states explicitly.
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return (
+      <div className="mx-auto flex max-w-lg flex-col items-center gap-4 px-6 py-24 text-center">
+        <h1 className="font-display text-2xl font-semibold">You&apos;re signed out</h1>
+        <p className="text-sm text-ink-muted">
+          Your session wasn&apos;t visible on this page — sign in again to see your
+          galleries.
+        </p>
+        <Link
+          href="/login?next=/dashboard"
+          className="rounded-full bg-blush-dark px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+        >
+          Sign in
+        </Link>
+      </div>
+    );
+  }
+
   const galleries = await getOwnerGalleries();
 
   if (galleries.length === 0) {
