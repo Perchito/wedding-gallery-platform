@@ -11,6 +11,7 @@ import { MoreMenuSheet } from "@/components/gallery/MoreMenuSheet";
 import { UploadSheet } from "@/components/upload/UploadSheet";
 import { GuestbookSheet } from "@/components/guestbook/GuestbookSheet";
 import { ScheduleSheet } from "@/components/schedule/ScheduleSheet";
+import { VoiceMessageList } from "@/components/voice/VoiceMessageList";
 import {
   getOrCreateGuestSession,
   updateGuestName,
@@ -33,8 +34,7 @@ import type {
 } from "@/lib/types";
 
 // Code-split secondary features so their JS only loads once a guest opens
-// them (spec section 37: "do not load AI functionality, Photo Hunt, voice
-// recording ... until required").
+// them (spec: voice/hunt/share sheets aren't needed for first paint).
 const VoiceSheet = dynamic(() =>
   import("@/components/voice/VoiceSheet").then((m) => m.VoiceSheet)
 );
@@ -80,7 +80,7 @@ export function GalleryApp({
 }: GalleryAppProps) {
   const [media, setMedia] = useState(initialMedia);
   const [messages, setMessages] = useState(initialMessages);
-  const [, setVoiceMessages] = useState(initialVoiceMessages);
+  const [voiceMessages, setVoiceMessages] = useState(initialVoiceMessages);
   const [activeCategory, setActiveCategory] = useState<CategoryId>("all");
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [sheet, setSheet] = useState<SheetId>(null);
@@ -210,6 +210,13 @@ export function GalleryApp({
           onChange={setActiveCategory}
         />
         <MasonryGallery items={filteredMedia} onOpen={openViewerFor} />
+
+        {/* Voice notes live under All/Speeches — guests consider voice
+            messages "speeches", so surface them where they look for them. */}
+        {(activeCategory === "all" || activeCategory === "speeches") &&
+          voiceMessages.length > 0 && (
+            <VoiceMessageList items={voiceMessages} />
+          )}
       </div>
 
       <div className="hidden justify-center gap-3 pb-10 sm:flex">
