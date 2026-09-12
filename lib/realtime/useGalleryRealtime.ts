@@ -91,7 +91,9 @@ function mapGuestbookRow(row: GuestbookRow): GuestbookMessage {
     guestName: row.guest_name,
     message: row.message,
     createdAt: row.created_at,
-    approvalStatus: row.approval_status,
+    // Realtime payloads type every column as string; the value is
+    // constrained by the CHECK constraint to the union below.
+    approvalStatus: row.approval_status as GuestbookMessage["approvalStatus"],
   };
 }
 
