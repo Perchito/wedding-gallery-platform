@@ -13,21 +13,21 @@ export default function Home() {
       </h1>
       <p className="mt-4 max-w-xl text-ink-muted">
         Guests scan a QR code and land straight in your private event gallery —
-        no app to download, no account to create. Try the live demo below.
+        no app to download, no account to create. Set up your event in minutes.
       </p>
 
       <div className="mt-8 flex flex-col gap-3 sm:flex-row">
         <Link
-          href="/g/demo"
+          href="/signup"
           className="rounded-full bg-blush-dark px-6 py-3 font-semibold text-white shadow-lg shadow-blush-dark/20 transition hover:opacity-90"
         >
-          View Demo Gallery — Mateo &amp; Genesis
+          Create Your Gallery
         </Link>
         <Link
-          href="/create"
+          href="/login"
           className="rounded-full border border-border px-6 py-3 font-semibold text-foreground transition hover:border-blush-dark/40"
         >
-          Create Your Own Gallery
+          Owner Sign In
         </Link>
       </div>
 

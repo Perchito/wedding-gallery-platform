@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Cormorant_Infant, Great_Vibes } from "next/font/google";
+import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { ViewportZoomReset } from "@/components/ViewportZoomReset";
@@ -9,27 +9,15 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
-// Heading/body pairing recommended by the ui-ux-pro-max design-system search
-// for "wedding celebration romantic elegant photo gallery" — see
-// design-system/wedding-gallery-platform/MASTER.md. Great Vibes is reserved
-// for small decorative accents only (script fonts hurt legibility at UI
-// sizes); Cormorant Infant carries all display headings.
-const cormorant = Cormorant_Infant({
-  variable: "--font-cormorant",
-  weight: ["300", "400", "500", "600", "700"],
-  subsets: ["latin"],
-});
-
-const greatVibes = Great_Vibes({
-  variable: "--font-great-vibes",
-  weight: "400",
+const playfair = Playfair_Display({
+  variable: "--font-playfair",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Mateo & Genesis — Wedding Gallery",
+  title: "Wedding Gallery — Every guest photo, in one place",
   description:
-    "Scan, snap and share your favourite moments from Mateo & Genesis's wedding.",
+    "Guests scan a QR code and share photos and videos straight into your private event gallery — no app, no guest accounts.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -42,19 +30,19 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#db2777",
+  themeColor: "#b5615f",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${cormorant.variable} ${greatVibes.variable} h-full antialiased`}
+      className={`${inter.variable} ${playfair.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}
-        <ServiceWorkerRegister />
         <ViewportZoomReset />
+        <ServiceWorkerRegister />
       </body>
     </html>
   );

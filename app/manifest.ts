@@ -2,10 +2,11 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Mateo & Genesis — Wedding Gallery",
+    name: "Wedding Gallery",
     short_name: "Wedding Gallery",
-    description: "Scan, snap and share your favourite moments from the wedding.",
-    start_url: "/g/demo",
+    description:
+      "Guests scan a QR code and share photos and videos straight into your private event gallery.",
+    start_url: "/",
     scope: "/",
     display: "standalone",
     background_color: "#fffaf6",
