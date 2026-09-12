@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getOwnerPlan, PLAN_LIMITS } from "@/lib/plans";
 
 const DEFAULT_ALBUMS = [
   { name: "Main Gallery", icon: "images", sort_order: 0 },
@@ -38,6 +39,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "partnerA, partnerB, and eventDate are required" }, { status: 400 });
   }
 
+  const plan = await getOwnerPlan(supabase, user.id);
+  const { count: galleryCount } = await supabase
+    .from("galleries")
+    .select("id", { count: "exact", head: true })
+    .eq("owner_id", user.id);
+  if ((galleryCount ?? 0) >= PLAN_LIMITS[plan].maxGalleries) {
+    return NextResponse.json(
+      { error: `Your ${plan} plan allows up to ${PLAN_LIMITS[plan].maxGalleries} gallery${PLAN_LIMITS[plan].maxGalleries === 1 ? "" : "ies"}. Upgrade to create more.` },
+      { status: 403 }
+    );
+  }
+
   let slug = slugify(partnerA, partnerB);
   const { data: existing } = await supabase.from("galleries").select("slug").eq("slug", slug).maybeSingle();
   if (existing || slug === "demo") {
@@ -62,8 +75,8 @@ export async function POST(request: Request) {
 
   if (galleryError || !gallery) {
     console.error("[galleries] insert failed:", galleryError?.message);
-    // Surface the underlying message — a swallowed error here is how
-    // 'album not found'-style broken states get created.
+    // Surface the underlying message to the owner — a swallowed error here
+    // is how 'album not found'-style broken states get created.
     return NextResponse.json(
       { error: `Failed to create gallery: ${galleryError?.message ?? "unknown error"}` },
       { status: 500 }
@@ -109,6 +122,9 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+
+  const origin = request.headers.get("origin") ?? new URL(request.url).origin;
+  await supabase.from("qr_codes").insert({ gallery_id: gallery.id, url: `${origin}/g/${slug}` });
 
   return NextResponse.json({ id: gallery.id, slug: gallery.slug });
 }
