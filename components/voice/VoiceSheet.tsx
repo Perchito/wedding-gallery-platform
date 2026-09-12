@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Mic, Square, Play, Pause, RotateCcw } from "lucide-react";
+import { Mic, Square, RotateCcw } from "lucide-react";
 import { BottomSheet } from "@/components/sheets/BottomSheet";
 import type { VoiceMessage } from "@/lib/types";
 
@@ -33,7 +33,6 @@ export function VoiceSheet({
   const [state, setState] = useState<RecordState>("idle");
   const [seconds, setSeconds] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [name, setName] = useState(guestName ?? "");
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
@@ -48,7 +47,6 @@ export function VoiceSheet({
   // back and stores the upload under the wrong content type.
   const mimeTypeRef = useRef<string>("audio/webm");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioElRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -105,17 +103,6 @@ export function VoiceSheet({
     setAudioUrl(null);
     setSeconds(0);
     setState("idle");
-  }
-
-  function togglePlay() {
-    const el = audioElRef.current;
-    if (!el) return;
-    if (isPlaying) {
-      el.pause();
-    } else {
-      el.play().catch(() => setIsPlaying(false));
-    }
-    setIsPlaying(!isPlaying);
   }
 
   function fileExtFromMime(mime: string) {
@@ -212,19 +199,19 @@ export function VoiceSheet({
 
           {state === "recorded" && audioUrl && (
             <div className="flex w-full flex-col items-center gap-4">
+              {/* Native player bar: play/pause, seekable timeline and time
+                  display on every browser — replaces the old custom
+                  play/pause button driving a hidden audio element. */}
               <audio
-                ref={audioElRef}
                 src={audioUrl}
-                onEnded={() => setIsPlaying(false)}
-                className="hidden"
+                controls
+                playsInline
+                preload="metadata"
+                className="w-full"
               />
-              <button
-                onClick={togglePlay}
-                className="flex h-16 w-16 items-center justify-center rounded-full bg-blush-dark text-white"
-              >
-                {isPlaying ? <Pause size={22} /> : <Play size={22} />}
-              </button>
-              <p className="text-sm text-ink-muted">{seconds}s recorded</p>
+              <p className="text-sm text-ink-muted">
+                {seconds}s recorded — use the player above to listen back
+              </p>
               <div className="flex w-full gap-2">
                 <button
                   onClick={reRecord}
