@@ -6,7 +6,7 @@ import type QRCodeStylingType from "qr-code-styling";
 import { cn } from "@/lib/cn";
 import type { Gallery } from "@/lib/types";
 
-// Themed looks for the gallery QR. All use level-H error correction so the
+// Themed looks for the gallery QR. All use level-H error correction so a
 // centre monogram never hurts scannability, and rounded/extra-rounded dot
 // shapes keep the code feeling like wedding stationery rather than a
 // shipping label.
@@ -20,6 +20,8 @@ interface QRPreset {
 }
 
 const INK = "#2D2A26";
+const INK_MUTED = "#75716A";
+const CREAM = "#FFF9F6";
 const BLUSH_DEEP = "#C98FA4";
 const BLUSH_SOFT = "#F3C5D4";
 const GOLD_DEEP = "#B8935C";
@@ -72,39 +74,57 @@ const PRESETS: QRPreset[] = [
   },
 ];
 
+type CardBackground = "cream" | "rose" | "photo";
+
 function coupleInitials(gallery: Gallery) {
-  return gallery.partnerNames.map((n) => n.trim()[0]?.toUpperCase() ?? "").filter(Boolean);
+  return gallery.partnerNames
+    .map((n) => n.trim()[0]?.toUpperCase() ?? "")
+    .filter(Boolean);
 }
 
-// Little cream circle with serif initials — the code's centre monogram.
-// Drawn to a data URI because qr-code-styling wants an image, and an
-// on-the-fly canvas means no assets to host.
+// Cream circle with serif initials — the code's centre monogram. Drawn to
+// a data URI because qr-code-styling wants an image, and an on-the-fly
+// canvas means no assets to host. Sized generously so it reads at arm's
+// length (preview QR + print renders).
 function drawMonogram(initials: string[]): string {
-  const size = 160;
+  const size = 200;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d");
   if (!ctx) return "";
 
-  ctx.fillStyle = "#FFF9F6";
+  ctx.fillStyle = CREAM;
   ctx.beginPath();
   ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.strokeStyle = BLUSH_DEEP;
-  ctx.lineWidth = 6;
+  ctx.lineWidth = 8;
   ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2 - 6, 0, Math.PI * 2);
+  ctx.arc(size / 2, size / 2, size / 2 - 8, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.fillStyle = INK;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "600 44px Georgia, 'Times New Roman', serif";
-  ctx.fillText(initials.join(" & "), size / 2, size / 2 + 2);
+  ctx.font = "600 56px Georgia, 'Times New Roman', serif";
+  ctx.fillText(initials.join(" & "), size / 2, size / 2 + 3);
 
   return canvas.toDataURL("image/png");
+}
+
+// Cover-fit draw helper (object-fit: cover for canvas).
+function drawCover(
+  ctx: CanvasRenderingContext2D,
+  img: CanvasImageSource & { width: number; height: number },
+  w: number,
+  h: number
+) {
+  const scale = Math.max(w / img.width, h / img.height);
+  const sw = w / scale;
+  const sh = h / scale;
+  ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, w, h);
 }
 
 interface ShareSheetProps {
@@ -116,43 +136,59 @@ interface ShareSheetProps {
 
 export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetProps) {
   const [preset, setPreset] = useState<QRPreset["id"]>("rose");
+  const [withLogo, setWithLogo] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [downloadingQR, setDownloadingQR] = useState(false);
+  const [downloadingCard, setDownloadingCard] = useState(false);
+  const [cardBackground, setCardBackground] = useState<CardBackground>("cream");
+  const [cardPhotoUrl, setCardPhotoUrl] = useState<string | null>(null);
   const qrContainerRef = useRef<HTMLDivElement>(null);
   const qrRef = useRef<QRCodeStylingType | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // Module is browser-only (touches canvas/window on import), so it comes
   // in via a dynamic import once we're mounted.
   const libRef = useRef<typeof import("qr-code-styling")["default"] | null>(null);
 
   const initials = useMemo(() => coupleInitials(gallery), [gallery]);
+  const coupleLabel = useMemo(() => gallery.partnerNames.join(" & "), [gallery]);
   const activePreset = PRESETS.find((p) => p.id === preset) ?? PRESETS[0];
+
+  async function ensureLib() {
+    if (!libRef.current) {
+      const mod = await import("qr-code-styling");
+      libRef.current = mod.default;
+    }
+    return libRef.current;
+  }
+
+  function qrOptions(width: number, margin: number) {
+    return {
+      width,
+      height: width,
+      type: "canvas" as const,
+      data: galleryUrl,
+      image: withLogo ? drawMonogram(initials) : undefined,
+      margin,
+      qrOptions: { errorCorrectionLevel: "H" as const },
+      imageOptions: {
+        crossOrigin: "anonymous" as const,
+        margin: 4,
+        imageSize: 0.4,
+      },
+      backgroundOptions: { color: CREAM },
+      dotsOptions: activePreset.dotsOptions,
+      cornersSquareOptions: activePreset.cornersSquareOptions,
+      cornersDotOptions: activePreset.cornersDotOptions,
+    };
+  }
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!libRef.current) {
-        const mod = await import("qr-code-styling");
-        if (cancelled) return;
-        libRef.current = mod.default;
-      }
-      const Lib = libRef.current;
-      if (!Lib) return;
+      const Lib = await ensureLib();
+      if (cancelled || !Lib) return;
 
-      const options = {
-        width: 230,
-        height: 230,
-        type: "svg" as const,
-        data: galleryUrl,
-        image: drawMonogram(initials),
-        margin: 6,
-        qrOptions: { errorCorrectionLevel: "H" as const },
-        imageOptions: { crossOrigin: "anonymous" as const, margin: 2, imageSize: 0.35 },
-        backgroundOptions: { color: "#FFF9F6" },
-        dotsOptions: activePreset.dotsOptions,
-        cornersSquareOptions: activePreset.cornersSquareOptions,
-        cornersDotOptions: activePreset.cornersDotOptions,
-      };
-
+      const options = { ...qrOptions(230, 6), type: "svg" as const };
       if (!qrRef.current) {
         qrRef.current = new Lib(options);
         if (qrContainerRef.current) {
@@ -166,7 +202,9 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
     return () => {
       cancelled = true;
     };
-  }, [galleryUrl, preset, initials, activePreset]);
+    // qrOptions captures galleryUrl / initials / activePreset / withLogo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [galleryUrl, preset, initials, activePreset, withLogo]);
 
   async function copyLink() {
     try {
@@ -174,9 +212,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Older iOS Safari: fall back to selecting the text for manual copy.
-      const input = document.querySelector<HTMLInputElement>("#share-gallery-url");
-      input?.select();
+      document.querySelector<HTMLInputElement>("#share-gallery-url")?.select();
     }
   }
 
@@ -184,48 +220,125 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
     if (!navigator.share) return;
     try {
       await navigator.share({
-        title: `${gallery.partnerNames.join(" & ")} — gallery`,
+        title: `${coupleLabel} — gallery`,
         text: "Add your photos, leave a message 🥂",
         url: galleryUrl,
       });
     } catch {
-      // User dismissed the share sheet — nothing to do.
+      // Share sheet dismissed — nothing to do.
     }
   }
 
-  // Print-quality export: render a fresh 1024px code rather than upscaling
-  // the on-screen one, so edge pixels stay razor sharp on table cards.
-  async function downloadForPrint() {
-    if (!libRef.current || downloading) return;
-    setDownloading(true);
+  function triggerDownload(blob: Blob, name: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Plain print-quality QR: fresh 1024px render rather than upscaling the
+  // on-screen one, so edges stay razor sharp.
+  async function downloadQR() {
+    if (downloadingQR) return;
+    setDownloadingQR(true);
     try {
-      const Lib = libRef.current;
-      const hiRes = new Lib({
-        width: 1024,
-        height: 1024,
-        type: "canvas",
-        data: galleryUrl,
-        image: drawMonogram(initials),
-        margin: 24,
-        qrOptions: { errorCorrectionLevel: "H" },
-        imageOptions: { crossOrigin: "anonymous", margin: 12, imageSize: 0.35 },
-        backgroundOptions: { color: "#FFF9F6" },
-        dotsOptions: activePreset.dotsOptions,
-        cornersSquareOptions: activePreset.cornersSquareOptions,
-        cornersDotOptions: activePreset.cornersDotOptions,
-      });
-      const blob = await hiRes.getRawData("png");
-      if (!(blob instanceof Blob)) throw new Error("No image produced");
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${gallery.slug}-gallery-qr.png`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const Lib = await ensureLib();
+      if (!Lib) throw new Error("QR library unavailable");
+      const hiRes = new Lib(qrOptions(1024, 24));
+      const raw = await hiRes.getRawData("png");
+      if (!(raw instanceof Blob)) throw new Error("No image produced");
+      triggerDownload(raw, `${gallery.slug}-gallery-qr.png`);
     } catch (err) {
       console.error("[share] QR download failed:", err);
     } finally {
-      setDownloading(false);
+      setDownloadingQR(false);
+    }
+  }
+
+  async function pickCardPhoto(file: File | null) {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    setCardPhotoUrl(url);
+    setCardBackground("photo");
+  }
+
+  // 1200×1800 (4×6") table card: background (cream / rosé wash / uploaded
+  // photo with a cream scrim), names, styled QR, tagline, short URL.
+  async function downloadTableCard() {
+    if (downloadingCard) return;
+    setDownloadingCard(true);
+    try {
+      const Lib = await ensureLib();
+      if (!Lib) throw new Error("QR library unavailable");
+
+      const W = 1200;
+      const H = 1800;
+      const canvas = document.createElement("canvas");
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("No canvas context");
+
+      if (cardBackground === "photo" && cardPhotoUrl) {
+        const img = new Image();
+        img.src = cardPhotoUrl;
+        await img.decode();
+        drawCover(ctx, img, W, H);
+        // Cream scrim keeps the code scanning regardless of the photo.
+        ctx.fillStyle = "rgba(255, 249, 246, 0.78)";
+        ctx.fillRect(0, 0, W, H);
+      } else if (cardBackground === "rose") {
+        const grad = ctx.createLinearGradient(0, 0, W, H);
+        grad.addColorStop(0, CREAM);
+        grad.addColorStop(0.5, BLUSH_SOFT);
+        grad.addColorStop(1, CREAM);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+      } else {
+        ctx.fillStyle = CREAM;
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = INK;
+      ctx.font = "600 96px Georgia, 'Times New Roman', serif";
+      ctx.fillText(coupleLabel, W / 2, 260);
+      ctx.font = "400 42px Georgia, 'Times New Roman', serif";
+      ctx.fillStyle = INK_MUTED;
+      ctx.fillText("Scan to share your photos & messages", W / 2, 340);
+
+      const qrSize = 700;
+      const qr = new Lib(qrOptions(qrSize, 16));
+      const raw = await qr.getRawData("png");
+      if (!(raw instanceof Blob)) throw new Error("No QR produced");
+      const qrBitmap = await createImageBitmap(raw);
+      // White card behind the code for guaranteed contrast on photos.
+      ctx.fillStyle = "#FFFFFF";
+      const pad = 40;
+      const qx = (W - qrSize) / 2 - pad;
+      const qy = 470 - pad;
+      const cardW = qrSize + pad * 2;
+      const r = 48;
+      ctx.beginPath();
+      ctx.roundRect(qx, qy, cardW, cardW, r);
+      ctx.fill();
+      ctx.drawImage(qrBitmap, (W - qrSize) / 2, 470, qrSize, qrSize);
+
+      ctx.font = "400 44px Georgia, 'Times New Roman', serif";
+      ctx.fillStyle = INK_MUTED;
+      ctx.fillText(galleryUrl.replace(/^https?:\/\//, ""), W / 2, 1370);
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/png")
+      );
+      if (!blob) throw new Error("Card render failed");
+      triggerDownload(blob, `${gallery.slug}-table-card.png`);
+    } catch (err) {
+      console.error("[share] Table card download failed:", err);
+    } finally {
+      setDownloadingCard(false);
     }
   }
 
@@ -243,7 +356,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
             onClick={onClose}
           />
           <motion.div
-            className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-lg rounded-t-3xl bg-cream px-5 pb-8 pt-3 shadow-sheet"
+            className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-lg rounded-t-3xl bg-cream px-5 pb-8 pt-3 shadow-sheet max-h-[92svh] overflow-y-auto"
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -261,8 +374,8 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
               </div>
             </div>
 
-            {/* Look picker */}
-            <div className="mt-4 flex justify-center gap-3">
+            {/* Look picker + logo toggle */}
+            <div className="mt-4 flex items-start justify-center gap-3">
               {PRESETS.map((p) => (
                 <button
                   key={p.id}
@@ -274,9 +387,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
                     className={cn(
                       "h-9 w-9 rounded-full border-2 transition",
                       p.swatchClass,
-                      preset === p.id
-                        ? "border-ink ring-2 ring-ink/20"
-                        : "border-transparent"
+                      preset === p.id ? "border-ink ring-2 ring-ink/20" : "border-transparent"
                     )}
                   />
                   <span
@@ -289,6 +400,32 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
                   </span>
                 </button>
               ))}
+              <div className="mx-1 h-9 w-px bg-border" />
+              <button
+                onClick={() => setWithLogo((v) => !v)}
+                className="flex flex-col items-center gap-1"
+                aria-pressed={withLogo}
+                aria-label="Toggle monogram"
+              >
+                <span
+                  className={cn(
+                    "grid h-9 w-9 place-items-center rounded-full border-2 text-[10px] font-semibold transition",
+                    withLogo
+                      ? "border-ink bg-cream text-ink"
+                      : "border-dashed border-ink-muted/40 text-ink-muted"
+                  )}
+                >
+                  {initials.join("&") || "—"}
+                </span>
+                <span
+                  className={cn(
+                    "text-[10px]",
+                    withLogo ? "font-semibold" : "text-ink-muted"
+                  )}
+                >
+                  {withLogo ? "Logo on" : "No logo"}
+                </span>
+              </button>
             </div>
 
             <div className="mt-5 flex items-center gap-2 rounded-xl border border-border bg-white px-3 py-2">
@@ -316,16 +453,65 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
                 </button>
               )}
               <button
-                onClick={downloadForPrint}
-                disabled={downloading}
+                onClick={downloadQR}
+                disabled={downloadingQR}
                 className="flex-1 rounded-xl border border-pine py-3 text-sm font-semibold text-pine disabled:opacity-60"
               >
-                {downloading ? "Preparing…" : "Download for print"}
+                {downloadingQR ? "Preparing…" : "Download QR"}
               </button>
             </div>
-            <p className="mt-2 text-center text-[11px] text-ink-muted">
-              Print-ready 1024×1024 PNG — perfect for table cards and signage.
-            </p>
+
+            {/* Table card export */}
+            <div className="mt-5 rounded-2xl border border-border bg-white/60 p-4">
+              <p className="text-sm font-semibold">Make a table card</p>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                4×6" print PNG with your names, the QR and the link.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(
+                  [
+                    { id: "cream", label: "Cream" },
+                    { id: "rose", label: "Rosé wash" },
+                    { id: "photo", label: "Your photo" },
+                  ] as const
+                ).map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() =>
+                      b.id === "photo"
+                        ? cardPhotoUrl
+                          ? setCardBackground("photo")
+                          : fileInputRef.current?.click()
+                        : setCardBackground(b.id)
+                    }
+                    className={cn(
+                      "rounded-full px-3 py-1.5 text-xs font-medium transition",
+                      cardBackground === b.id
+                        ? "bg-ink text-cream"
+                        : "border border-border text-ink-muted"
+                    )}
+                  >
+                    {b.id === "photo" && cardPhotoUrl && cardBackground === "photo"
+                      ? "Photo ✓ — change"
+                      : b.label}
+                  </button>
+                ))}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => pickCardPhoto(e.target.files?.[0] ?? null)}
+                />
+              </div>
+              <button
+                onClick={downloadTableCard}
+                disabled={downloadingCard}
+                className="mt-3 w-full rounded-xl bg-pine py-3 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {downloadingCard ? "Building card…" : "Download table card"}
+              </button>
+            </div>
           </motion.div>
         )}
       </>
