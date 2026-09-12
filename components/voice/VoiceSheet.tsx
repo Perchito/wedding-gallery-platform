@@ -20,6 +20,61 @@ interface VoiceSheetProps {
 
 type RecordState = "idle" | "recording" | "recorded" | "unsupported" | "denied";
 
+interface WavRecorderState {
+  ctx: AudioContext;
+  stream: MediaStream;
+  processor: ScriptProcessorNode;
+  chunks: Float32Array[];
+}
+
+// iOS Safari's MediaRecorder emits fragmented MP4, which Safari itself
+// cannot play back from a blob URL (the <audio> player errors). iPhone/iPad
+// guests therefore record raw PCM through the Web Audio API and get a WAV
+// file instead — universally playable, including back on the same device.
+function needsWavFallback() {
+  const ua = navigator.userAgent;
+  const isIOS =
+    /iP(hone|ad|od)/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  return isIOS || typeof MediaRecorder === "undefined";
+}
+
+function encodeWav(chunks: Float32Array[], sampleRate: number): Blob {
+  const total = chunks.reduce((acc, c) => acc + c.length, 0);
+  const samples = new Float32Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    samples.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeString = (o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+  };
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true); // PCM header size
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeString(36, "data");
+  view.setUint32(40, samples.length * 2, true);
+
+  let o = 44;
+  for (let i = 0; i < samples.length; i++, o += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([view], { type: "audio/wav" });
+}
+
 export function VoiceSheet({
   open,
   onClose,
@@ -39,12 +94,12 @@ export function VoiceSheet({
   const [error, setError] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const wavRef = useRef<WavRecorderState | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordedBlobRef = useRef<Blob | null>(null);
-  // The browser decides the actual container/codec (e.g. iOS Safari records
-  // audio/mp4, Chrome records audio/webm). The recorded blob MUST carry this
-  // real type — labeling mp4 data as webm makes Safari refuse to play it
-  // back and stores the upload under the wrong content type.
+  // The browser decides the actual container/codec (e.g. Chrome records
+  // audio/webm). The recorded blob MUST carry this real type — labeling it
+  // wrongly makes playback fail and stores the upload under a wrong type.
   const mimeTypeRef = useRef<string>("audio/webm");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -57,24 +112,49 @@ export function VoiceSheet({
   }, []);
 
   async function startRecording() {
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setState("unsupported");
       return;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      mimeTypeRef.current = recorder.mimeType || "audio/webm";
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current });
-        recordedBlobRef.current = blob;
-        setAudioUrl(URL.createObjectURL(blob));
-        stream.getTracks().forEach((t) => t.stop());
-      };
-      recorder.start();
-      mediaRecorderRef.current = recorder;
+
+      if (needsWavFallback()) {
+        const AudioContextCtor =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const ctx = new AudioContextCtor();
+        const source = ctx.createMediaStreamSource(stream);
+        const processor = ctx.createScriptProcessor(4096, 1, 1);
+        const chunks: Float32Array[] = [];
+        processor.onaudioprocess = (e) => {
+          chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+        };
+        // ScriptProcessorNode only fires while connected to a destination;
+        // route through a zero-gain node so recording never plays out loud.
+        const mute = ctx.createGain();
+        mute.gain.value = 0;
+        source.connect(processor);
+        processor.connect(mute);
+        mute.connect(ctx.destination);
+        wavRef.current = { ctx, stream, processor, chunks };
+        mediaRecorderRef.current = null;
+      } else {
+        const recorder = new MediaRecorder(stream);
+        mimeTypeRef.current = recorder.mimeType || "audio/webm";
+        chunksRef.current = [];
+        recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+        recorder.onstop = () => {
+          const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current });
+          recordedBlobRef.current = blob;
+          setAudioUrl(URL.createObjectURL(blob));
+          stream.getTracks().forEach((t) => t.stop());
+        };
+        recorder.start();
+        mediaRecorderRef.current = recorder;
+        wavRef.current = null;
+      }
+
       setSeconds(0);
       setState("recording");
       timerRef.current = setInterval(() => {
@@ -93,6 +173,21 @@ export function VoiceSheet({
 
   function stopRecording() {
     if (timerRef.current) clearInterval(timerRef.current);
+
+    const wav = wavRef.current;
+    if (wav) {
+      const blob = encodeWav(wav.chunks, wav.ctx.sampleRate);
+      recordedBlobRef.current = blob;
+      mimeTypeRef.current = "audio/wav";
+      setAudioUrl(URL.createObjectURL(blob));
+      wav.processor.disconnect();
+      wav.stream.getTracks().forEach((t) => t.stop());
+      void wav.ctx.close();
+      wavRef.current = null;
+      setState("recorded");
+      return;
+    }
+
     mediaRecorderRef.current?.stop();
     setState("recorded");
   }
@@ -200,8 +295,7 @@ export function VoiceSheet({
           {state === "recorded" && audioUrl && (
             <div className="flex w-full flex-col items-center gap-4">
               {/* Native player bar: play/pause, seekable timeline and time
-                  display on every browser — replaces the old custom
-                  play/pause button driving a hidden audio element. */}
+                  display on every browser. */}
               <audio
                 src={audioUrl}
                 controls
