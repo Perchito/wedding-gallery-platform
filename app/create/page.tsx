@@ -13,17 +13,49 @@ export default function CreateGalleryPage() {
   const [partnerB, setPartnerB] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [venue, setVenue] = useState("");
-  const [heroImageUrl, setHeroImageUrl] = useState("");
+  const [heroFile, setHeroFile] = useState<File | null>(null);
+  const [heroPreview, setHeroPreview] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const step1Valid = partnerA.trim() && partnerB.trim() && eventDate;
 
+  function handleHeroFile(file: File | null) {
+    if (!file) return;
+    if (heroPreview) URL.revokeObjectURL(heroPreview);
+    setHeroFile(file);
+    setHeroPreview(URL.createObjectURL(file));
+  }
+
+  function clearHero() {
+    if (heroPreview) URL.revokeObjectURL(heroPreview);
+    setHeroFile(null);
+    setHeroPreview(null);
+  }
+
   async function handleCreate() {
     setSubmitting(true);
     setError(null);
     try {
+      // Upload the hero photo first (if one was picked) so its public URL
+      // can be stored on the gallery row in the next step.
+      let heroImageUrl = "";
+      if (heroFile) {
+        const uploadData = new FormData();
+        uploadData.append("file", heroFile);
+        const uploadRes = await fetch("/api/hero-upload", {
+          method: "POST",
+          body: uploadData,
+        });
+        if (!uploadRes.ok) {
+          throw new Error(
+            (await uploadRes.json()).error || "Failed to upload hero photo"
+          );
+        }
+        heroImageUrl = (await uploadRes.json()).url;
+      }
+
       const res = await fetch("/api/galleries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -32,7 +64,7 @@ export default function CreateGalleryPage() {
           partnerB: partnerB.trim(),
           eventDate,
           venue: venue.trim(),
-          heroImageUrl: heroImageUrl.trim(),
+          heroImageUrl,
           description: description.trim(),
         }),
       });
@@ -107,17 +139,59 @@ export default function CreateGalleryPage() {
 
         {step === 2 && (
           <div className="flex flex-col gap-4">
-            <Field label="Hero photo URL" icon={<ImageIcon size={16} />} optional>
+            <div className="text-sm font-medium">
+              <span className="mb-1 flex items-center gap-1.5">
+                <span className="text-blush-dark">
+                  <ImageIcon size={16} />
+                </span>
+                Hero photo{" "}
+                <span className="font-normal text-ink-muted">(optional)</span>
+              </span>
               <input
-                value={heroImageUrl}
-                onChange={(e) => setHeroImageUrl(e.target.value)}
-                placeholder="https://…"
-                className="input-field"
+                id="hero-file-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => handleHeroFile(e.target.files?.[0] ?? null)}
               />
-            </Field>
+              {heroPreview ? (
+                <div className="mt-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={heroPreview}
+                    alt="Hero photo preview"
+                    className="h-32 w-full rounded-lg object-cover"
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <label
+                      htmlFor="hero-file-input"
+                      className="cursor-pointer rounded-full border border-border px-3 py-1.5 text-xs font-medium hover:border-blush-dark/40"
+                    >
+                      Replace photo
+                    </label>
+                    <button
+                      type="button"
+                      onClick={clearHero}
+                      className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-red-600 hover:border-red-300"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label
+                  htmlFor="hero-file-input"
+                  className="mt-1 flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-dashed border-border px-4 py-6 text-sm font-normal text-ink-muted hover:border-blush-dark/40 hover:text-blush-dark"
+                >
+                  <ImageIcon size={20} />
+                  Choose a photo of you both
+                  <span className="text-xs">JPG, PNG or WebP — up to 10 MB</span>
+                </label>
+              )}
+            </div>
             <p className="-mt-2 text-xs text-ink-muted">
-              Leave blank and we&apos;ll use a placeholder until you upload real
-              photos.
+              Shown at the top of your gallery. Leave it out and the gallery
+              simply opens with your names and date.
             </p>
             <Field label="Welcome message" optional>
               <textarea
@@ -135,6 +209,14 @@ export default function CreateGalleryPage() {
           <div className="flex flex-col gap-4">
             <p className="text-sm font-medium text-ink-muted">Review</p>
             <div className="rounded-xl bg-surface-muted p-4 text-sm">
+              {heroPreview && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={heroPreview}
+                  alt="Hero photo preview"
+                  className="mb-3 h-24 w-full rounded-lg object-cover"
+                />
+              )}
               <p className="font-display text-lg font-semibold">
                 {partnerA || "Partner 1"} &amp; {partnerB || "Partner 2"}
               </p>

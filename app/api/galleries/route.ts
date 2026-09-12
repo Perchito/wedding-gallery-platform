@@ -75,13 +75,53 @@ export async function POST(request: Request) {
 
   if (galleryError || !gallery) {
     console.error("[galleries] insert failed:", galleryError?.message);
-    return NextResponse.json({ error: "Failed to create gallery" }, { status: 500 });
+    // Surface the underlying message to the owner — a swallowed error here
+    // is how 'album not found'-style broken states get created.
+    return NextResponse.json(
+      { error: `Failed to create gallery: ${galleryError?.message ?? "unknown error"}` },
+      { status: 500 }
+    );
   }
 
-  await supabase.from("gallery_settings").insert({ gallery_id: gallery.id });
-  await supabase
+  // Default settings + albums are part of what makes a gallery usable, so
+  // verify they actually landed instead of letting the owner discover a
+  // broken gallery later (a gallery with no albums fails every upload with
+  // 'Album does not belong to this gallery'). Roll the gallery back if
+  // either fails so nothing half-created is left behind.
+  const rollback = async () => {
+    await supabase.from("gallery_settings").delete().eq("gallery_id", gallery.id);
+    await supabase.from("albums").delete().eq("gallery_id", gallery.id);
+    await supabase.from("galleries").delete().eq("id", gallery.id);
+  };
+  const migrationsHint =
+    "Make sure every migration in supabase/migrations/ (especially 00009_fix_galleries_rls_recursion.sql) is applied to your Supabase project — see GOING-LIVE.md.";
+
+  const { error: settingsError } = await supabase
+    .from("gallery_settings")
+    .insert({ gallery_id: gallery.id });
+  if (settingsError) {
+    await rollback();
+    console.error("[galleries] settings insert failed:", settingsError.message);
+    return NextResponse.json(
+      { error: `Failed to initialise gallery settings: ${settingsError.message}. ${migrationsHint}` },
+      { status: 500 }
+    );
+  }
+
+  const { data: albums, error: albumsError } = await supabase
     .from("albums")
-    .insert(DEFAULT_ALBUMS.map((a) => ({ ...a, gallery_id: gallery.id })));
+    .insert(DEFAULT_ALBUMS.map((a) => ({ ...a, gallery_id: gallery.id })))
+    .select();
+  if (albumsError || !albums || albums.length !== DEFAULT_ALBUMS.length) {
+    await rollback();
+    console.error("[galleries] albums insert failed:", albumsError?.message);
+    return NextResponse.json(
+      {
+        error: `Failed to create the default albums: ${albumsError?.message ?? "no rows returned"}. ${migrationsHint}`,
+      },
+      { status: 500 }
+    );
+  }
 
   const origin = request.headers.get("origin") ?? new URL(request.url).origin;
   await supabase.from("qr_codes").insert({ gallery_id: gallery.id, url: `${origin}/g/${slug}` });

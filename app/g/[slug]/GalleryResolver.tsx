@@ -13,10 +13,10 @@ export function GalleryResolver() {
         This link may have been mistyped, or the gallery it points to isn&apos;t public.
       </p>
       <Link
-        href="/g/demo"
+        href="/signup"
         className="mt-2 rounded-full bg-blush-dark px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
       >
-        View Demo Gallery
+        Create Your Gallery
       </Link>
     </div>
   );
