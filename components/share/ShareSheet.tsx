@@ -78,14 +78,17 @@ type CardBackground = "cream" | "rose" | "photo";
 
 function coupleInitials(gallery: Gallery) {
   return gallery.partnerNames
-    .map((n) => n.trim()[0]?.toUpperCase() ?? "")
+    .map((n) => n.trim().charAt(0).toUpperCase())
     .filter(Boolean);
 }
 
-// Cream circle with serif initials — the code's centre monogram. Drawn to
-// a data URI because qr-code-styling wants an image, and an on-the-fly
-// canvas means no assets to host. Sized generously so it reads at arm's
-// length (preview QR + print renders).
+function displayUrl(url: string) {
+  return url.split("://").pop() ?? url;
+}
+
+// Cream circle with serif initials — the code's centre monogram. Drawn via
+// canvas so there's no image asset to host, and sized generously so it
+// reads at arm's length on both the preview and print downloads.
 function drawMonogram(initials: string[]): string {
   const size = 200;
   const canvas = document.createElement("canvas");
@@ -114,10 +117,9 @@ function drawMonogram(initials: string[]): string {
   return canvas.toDataURL("image/png");
 }
 
-// Cover-fit draw helper (object-fit: cover for canvas).
 function drawCover(
   ctx: CanvasRenderingContext2D,
-  img: CanvasImageSource & { width: number; height: number },
+  img: HTMLImageElement,
   w: number,
   h: number
 ) {
@@ -145,8 +147,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
   const qrContainerRef = useRef<HTMLDivElement>(null);
   const qrRef = useRef<QRCodeStylingType | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Module is browser-only (touches canvas/window on import), so it comes
-  // in via a dynamic import once we're mounted.
+  // qr-code-styling touches window/canvas on import, so it loads client-side only.
   const libRef = useRef<typeof import("qr-code-styling")["default"] | null>(null);
 
   const initials = useMemo(() => coupleInitials(gallery), [gallery]);
@@ -167,7 +168,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
       height: width,
       type: "canvas" as const,
       data: galleryUrl,
-      image: withLogo ? drawMonogram(initials) : undefined,
+      image: withLogo && initials.length > 0 ? drawMonogram(initials) : undefined,
       margin,
       qrOptions: { errorCorrectionLevel: "H" as const },
       imageOptions: {
@@ -188,7 +189,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
       const Lib = await ensureLib();
       if (cancelled || !Lib) return;
 
-      const options = { ...qrOptions(230, 6), type: "svg" as const };
+      const options = Object.assign(qrOptions(230, 6), { type: "svg" as const });
       if (!qrRef.current) {
         qrRef.current = new Lib(options);
         if (qrContainerRef.current) {
@@ -212,7 +213,9 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      document.querySelector<HTMLInputElement>("#share-gallery-url")?.select();
+      document
+        .querySelector<HTMLInputElement>("#share-gallery-url")
+        ?.select();
     }
   }
 
@@ -220,8 +223,8 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
     if (!navigator.share) return;
     try {
       await navigator.share({
-        title: `${coupleLabel} — gallery`,
-        text: "Add your photos, leave a message 🥂",
+        title: coupleLabel + " — gallery",
+        text: "Add your photos, leave a message",
         url: galleryUrl,
       });
     } catch {
@@ -238,8 +241,8 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
     URL.revokeObjectURL(url);
   }
 
-  // Plain print-quality QR: fresh 1024px render rather than upscaling the
-  // on-screen one, so edges stay razor sharp.
+  // Fresh 1024px render rather than upscaling the preview, so printed edges
+  // stay razor sharp.
   async function downloadQR() {
     if (downloadingQR) return;
     setDownloadingQR(true);
@@ -249,7 +252,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
       const hiRes = new Lib(qrOptions(1024, 24));
       const raw = await hiRes.getRawData("png");
       if (!(raw instanceof Blob)) throw new Error("No image produced");
-      triggerDownload(raw, `${gallery.slug}-gallery-qr.png`);
+      triggerDownload(raw, gallery.slug + "-gallery-qr.png");
     } catch (err) {
       console.error("[share] QR download failed:", err);
     } finally {
@@ -257,15 +260,14 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
     }
   }
 
-  async function pickCardPhoto(file: File | null) {
+  function pickCardPhoto(file: File | null) {
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setCardPhotoUrl(url);
+    setCardPhotoUrl(URL.createObjectURL(file));
     setCardBackground("photo");
   }
 
-  // 1200×1800 (4×6") table card: background (cream / rosé wash / uploaded
-  // photo with a cream scrim), names, styled QR, tagline, short URL.
+  // 1200×1800 (4×6in) table card: background (cream / rosé wash / uploaded
+  // photo under a cream scrim), names, styled QR on a white card, tagline, URL.
   async function downloadTableCard() {
     if (downloadingCard) return;
     setDownloadingCard(true);
@@ -305,36 +307,40 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
       ctx.fillStyle = INK;
       ctx.font = "600 96px Georgia, 'Times New Roman', serif";
       ctx.fillText(coupleLabel, W / 2, 260);
-      ctx.font = "400 42px Georgia, 'Times New Roman', serif";
       ctx.fillStyle = INK_MUTED;
-      ctx.fillText("Scan to share your photos & messages", W / 2, 340);
+      ctx.font = "400 42px Georgia, 'Times New Roman', serif";
+      ctx.fillText("Scan to share your photos and messages", W / 2, 340);
 
       const qrSize = 700;
       const qr = new Lib(qrOptions(qrSize, 16));
       const raw = await qr.getRawData("png");
       if (!(raw instanceof Blob)) throw new Error("No QR produced");
       const qrBitmap = await createImageBitmap(raw);
-      // White card behind the code for guaranteed contrast on photos.
-      ctx.fillStyle = "#FFFFFF";
+
+      // White card behind the code for guaranteed contrast over any background.
       const pad = 40;
-      const qx = (W - qrSize) / 2 - pad;
-      const qy = 470 - pad;
       const cardW = qrSize + pad * 2;
-      const r = 48;
-      ctx.beginPath();
-      ctx.roundRect(qx, qy, cardW, cardW, r);
-      ctx.fill();
+      const qx = (W - cardW) / 2;
+      const qy = 470 - pad;
+      ctx.fillStyle = "#FFFFFF";
+      if (typeof ctx.roundRect === "function") {
+        ctx.beginPath();
+        ctx.roundRect(qx, qy, cardW, cardW, 48);
+        ctx.fill();
+      } else {
+        ctx.fillRect(qx, qy, cardW, cardW);
+      }
       ctx.drawImage(qrBitmap, (W - qrSize) / 2, 470, qrSize, qrSize);
 
-      ctx.font = "400 44px Georgia, 'Times New Roman', serif";
       ctx.fillStyle = INK_MUTED;
-      ctx.fillText(galleryUrl.replace(/^https?:\/\//, ""), W / 2, 1370);
+      ctx.font = "400 44px Georgia, 'Times New Roman', serif";
+      ctx.fillText(displayUrl(galleryUrl), W / 2, 1370);
 
       const blob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, "image/png")
       );
       if (!blob) throw new Error("Card render failed");
-      triggerDownload(blob, `${gallery.slug}-table-card.png`);
+      triggerDownload(blob, gallery.slug + "-table-card.png");
     } catch (err) {
       console.error("[share] Table card download failed:", err);
     } finally {
@@ -356,7 +362,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
             onClick={onClose}
           />
           <motion.div
-            className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-lg rounded-t-3xl bg-cream px-5 pb-8 pt-3 shadow-sheet max-h-[92svh] overflow-y-auto"
+            className="fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[92svh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-cream px-5 pb-8 pt-3 shadow-sheet"
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -374,14 +380,13 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
               </div>
             </div>
 
-            {/* Look picker + logo toggle */}
             <div className="mt-4 flex items-start justify-center gap-3">
               {PRESETS.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => setPreset(p.id)}
                   className="flex flex-col items-center gap-1"
-                  aria-label={`QR style: ${p.label}`}
+                  aria-label={"QR style: " + p.label}
                 >
                   <span
                     className={cn(
@@ -415,7 +420,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
                       : "border-dashed border-ink-muted/40 text-ink-muted"
                   )}
                 >
-                  {initials.join("&") || "—"}
+                  {initials.length > 0 ? initials.join("&") : "--"}
                 </span>
                 <span
                   className={cn(
@@ -449,7 +454,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
                   onClick={shareNative}
                   className="flex-1 rounded-xl bg-blush-dark py-3 text-sm font-semibold text-white"
                 >
-                  Share…
+                  Share
                 </button>
               )}
               <button
@@ -461,41 +466,54 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
               </button>
             </div>
 
-            {/* Table card export */}
             <div className="mt-5 rounded-2xl border border-border bg-white/60 p-4">
               <p className="text-sm font-semibold">Make a table card</p>
               <p className="mt-0.5 text-xs text-ink-muted">
-                4×6" print PNG with your names, the QR and the link.
+                4x6in print PNG with your names, the QR and the link.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {(
-                  [
-                    { id: "cream", label: "Cream" },
-                    { id: "rose", label: "Rosé wash" },
-                    { id: "photo", label: "Your photo" },
-                  ] as const
-                ).map((b) => (
-                  <button
-                    key={b.id}
-                    onClick={() =>
-                      b.id === "photo"
-                        ? cardPhotoUrl
-                          ? setCardBackground("photo")
-                          : fileInputRef.current?.click()
-                        : setCardBackground(b.id)
-                    }
-                    className={cn(
-                      "rounded-full px-3 py-1.5 text-xs font-medium transition",
-                      cardBackground === b.id
-                        ? "bg-ink text-cream"
-                        : "border border-border text-ink-muted"
-                    )}
-                  >
-                    {b.id === "photo" && cardPhotoUrl && cardBackground === "photo"
-                      ? "Photo ✓ — change"
-                      : b.label}
-                  </button>
-                ))}
+                <button
+                  onClick={() => setCardBackground("cream")}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-xs font-medium transition",
+                    cardBackground === "cream"
+                      ? "bg-ink text-cream"
+                      : "border border-border text-ink-muted"
+                  )}
+                >
+                  Cream
+                </button>
+                <button
+                  onClick={() => setCardBackground("rose")}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-xs font-medium transition",
+                    cardBackground === "rose"
+                      ? "bg-ink text-cream"
+                      : "border border-border text-ink-muted"
+                  )}
+                >
+                  Rosé wash
+                </button>
+                <button
+                  onClick={() => {
+                    if (cardPhotoUrl) setCardBackground("photo");
+                    else fileInputRef.current?.click();
+                  }}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-xs font-medium transition",
+                    cardBackground === "photo"
+                      ? "bg-ink text-cream"
+                      : "border border-border text-ink-muted"
+                  )}
+                >
+                  {cardPhotoUrl ? "Photo selected — tap to keep, upload to change" : "Your photo"}
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-ink-muted"
+                >
+                  {cardPhotoUrl ? "Change photo" : "Upload photo"}
+                </button>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -513,8 +531,8 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
               </button>
             </div>
           </motion.div>
-        )}
-      </>
+        </>
+      )}
     </AnimatePresence>
   );
 }
