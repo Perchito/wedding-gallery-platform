@@ -7,6 +7,19 @@ import { MEDIA_BUCKET, buildVoicePath, getPublicMediaUrl } from "@/lib/supabase/
 const MAX_SECONDS = 60;
 const MAX_BYTES = 15 * 1024 * 1024;
 
+// MediaRecorder output format is browser-dependent (webm/opus in Chrome,
+// mp4/AAC in iOS Safari, ...). Trust the file's reported mime type for both
+// the stored content type and extension — never hardcode webm, or Safari
+// guests can't play their own message back and the stored file misleads
+// every future player.
+function voiceExt(mime: string) {
+  if (mime.includes("mp4")) return "m4a";
+  if (mime.includes("ogg")) return "ogg";
+  if (mime.includes("mpeg")) return "mp3";
+  if (mime.includes("wav")) return "wav";
+  return "webm";
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ galleryId: string }> }
@@ -35,10 +48,11 @@ export async function POST(
   }
 
   const id = randomUUID();
-  const path = buildVoicePath(galleryId, id);
+  const contentType = (audio as File).type || "audio/webm";
+  const path = buildVoicePath(galleryId, id, voiceExt(contentType));
   const { error: uploadError } = await supabase.storage
     .from(MEDIA_BUCKET)
-    .upload(path, audio, { contentType: "audio/webm" });
+    .upload(path, audio, { contentType });
   if (uploadError) {
     console.error("[voice-messages] storage upload failed:", uploadError.message);
     return NextResponse.json({ error: "Failed to store recording" }, { status: 500 });

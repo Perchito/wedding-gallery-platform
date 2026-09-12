@@ -8,8 +8,8 @@ export function buildPosterPath(galleryId: string, mediaId: string) {
   return `${galleryId}/media/${mediaId}/poster.jpg`;
 }
 
-export function buildVoicePath(galleryId: string, voiceMessageId: string) {
-  return `${galleryId}/voice/${voiceMessageId}.webm`;
+export function buildVoicePath(galleryId: string, voiceMessageId: string, ext = "webm") {
+  return `${galleryId}/voice/${voiceMessageId}.${ext}`;
 }
 
 export function getPublicMediaUrl(path: string) {
