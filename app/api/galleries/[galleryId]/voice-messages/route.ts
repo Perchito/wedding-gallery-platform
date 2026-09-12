@@ -1,17 +1,10 @@
 import { NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { checkGalleryAllowsGuestWrite } from "@/lib/guest-write-guard";
 import { MEDIA_BUCKET, buildVoicePath, getPublicMediaUrl } from "@/lib/supabase/storage";
 
 const MAX_SECONDS = 60;
-const MAX_BYTES = 15 * 1024 * 1024;
 
-// MediaRecorder output format is browser-dependent (webm/opus in Chrome,
-// mp4/AAC in iOS Safari, ...). Trust the file's reported mime type for both
-// the stored content type and extension — never hardcode webm, or Safari
-// guests can't play their own message back and the stored file misleads
-// every future player.
 function voiceExt(mime: string) {
   if (mime.includes("mp4")) return "m4a";
   if (mime.includes("ogg")) return "ogg";
@@ -20,24 +13,27 @@ function voiceExt(mime: string) {
   return "webm";
 }
 
+// Step 2 of the direct-to-storage voice upload (step 1:
+// …/voice-messages/request). The audio itself went straight from the
+// browser to Storage; this just verifies it landed and records the row.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ galleryId: string }> }
 ) {
   const { galleryId } = await params;
-  const formData = await request.formData();
-  const audio = formData.get("audio");
-  const guestSessionId = formData.get("guestSessionId")?.toString() ?? null;
-  const guestName = formData.get("guestName")?.toString() || null;
-  const durationSeconds = Number(formData.get("durationSeconds") ?? 0);
+  const { voiceMessageId, guestSessionId, guestName, durationSeconds, mimeType } =
+    (await request.json()) as {
+      voiceMessageId?: string;
+      guestSessionId?: string | null;
+      guestName?: string | null;
+      durationSeconds?: number;
+      mimeType?: string;
+    };
 
-  if (!(audio instanceof Blob)) {
-    return NextResponse.json({ error: "Missing audio file" }, { status: 400 });
+  if (!voiceMessageId) {
+    return NextResponse.json({ error: "voiceMessageId is required" }, { status: 400 });
   }
-  if (audio.size > MAX_BYTES) {
-    return NextResponse.json({ error: "Recording is too large" }, { status: 413 });
-  }
-  if (durationSeconds > MAX_SECONDS + 2) {
+  if (typeof durationSeconds === "number" && durationSeconds > MAX_SECONDS + 2) {
     return NextResponse.json({ error: "Recording exceeds 60 seconds" }, { status: 400 });
   }
 
@@ -47,27 +43,25 @@ export async function POST(
     return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
 
-  const id = randomUUID();
-  const contentType = (audio as File).type || "audio/webm";
-  const path = buildVoicePath(galleryId, id, voiceExt(contentType));
-  const { error: uploadError } = await supabase.storage
+  const ext = voiceExt(mimeType || "audio/webm");
+  const expectedName = `${voiceMessageId}.${ext}`;
+  const { data: files } = await supabase.storage
     .from(MEDIA_BUCKET)
-    .upload(path, audio, { contentType });
-  if (uploadError) {
-    console.error("[voice-messages] storage upload failed:", uploadError.message);
-    return NextResponse.json({ error: "Failed to store recording" }, { status: 500 });
+    .list(`${galleryId}/voice`);
+  if (!files?.some((f) => f.name === expectedName)) {
+    return NextResponse.json({ error: "Uploaded recording not found in storage" }, { status: 400 });
   }
 
-  const audioUrl = getPublicMediaUrl(path);
+  const audioUrl = getPublicMediaUrl(buildVoicePath(galleryId, voiceMessageId, ext));
   const { data, error } = await supabase
     .from("voice_messages")
     .insert({
-      id,
+      id: voiceMessageId,
       gallery_id: galleryId,
-      guest_session_id: guestSessionId,
-      guest_name: guestName,
+      guest_session_id: guestSessionId ?? null,
+      guest_name: guestName ?? null,
       audio_url: audioUrl,
-      duration_seconds: durationSeconds,
+      duration_seconds: durationSeconds ?? 0,
     })
     .select()
     .single();

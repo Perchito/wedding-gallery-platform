@@ -172,7 +172,19 @@ export function GalleryApp({
     });
   }
 
-  useGalleryRealtime(gallery.id, (item) => handleUploaded([item]));
+  // Live updates: new photos AND new voice messages AND new guestbook posts
+  // arrive here for everyone currently viewing (deduped by id).
+  useGalleryRealtime(gallery.id, {
+    onMedia: (item) => handleUploaded([item]),
+    onVoiceMessage: (message) =>
+      setVoiceMessages((prev) =>
+        prev.some((v) => v.id === message.id) ? prev : [...prev, message]
+      ),
+    onGuestbookMessage: (message) =>
+      setMessages((prev) =>
+        prev.some((m) => m.id === message.id) ? prev : [...prev, message]
+      ),
+  });
   useOfflineQueueDrain(gallery.id, gallery.slug, guestSessionId, guestName, handleUploaded);
 
   function handleHuntComplete(challengeId: string, item: MediaItem) {

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import type { CategoryId, MediaItem } from "@/lib/types";
+import type { CategoryId, GuestbookMessage, MediaItem, VoiceMessage } from "@/lib/types";
 
 interface MediaRow {
   id: string;
@@ -24,7 +24,7 @@ interface MediaRow {
   created_at: string;
 }
 
-function mapRow(row: MediaRow): MediaItem {
+function mapMediaRow(row: MediaRow): MediaItem {
   return {
     id: row.id,
     galleryId: row.gallery_id,
@@ -51,27 +51,90 @@ function mapRow(row: MediaRow): MediaItem {
   };
 }
 
-// Live-updates the gallery for guests currently viewing it: subscribes to
-// new `media` rows for this gallery via Supabase Realtime (Postgres
-// Changes) so an upload from one guest appears for everyone else without a
-// manual refresh.
-export function useGalleryRealtime(galleryId: string, onInsert: (item: MediaItem) => void) {
-  const onInsertRef = useRef(onInsert);
+interface VoiceMessageRow {
+  id: string;
+  gallery_id: string;
+  guest_session_id: string | null;
+  guest_name: string | null;
+  audio_url: string;
+  duration_seconds: number | null;
+  created_at: string;
+}
+
+function mapVoiceRow(row: VoiceMessageRow): VoiceMessage {
+  return {
+    id: row.id,
+    galleryId: row.gallery_id,
+    guestSessionId: row.guest_session_id ?? "",
+    guestName: row.guest_name,
+    audioUrl: row.audio_url,
+    durationSeconds: row.duration_seconds ?? 0,
+    createdAt: row.created_at,
+  };
+}
+
+interface GuestbookRow {
+  id: string;
+  gallery_id: string;
+  guest_session_id: string | null;
+  guest_name: string | null;
+  message: string;
+  approval_status: string;
+  created_at: string;
+}
+
+function mapGuestbookRow(row: GuestbookRow): GuestbookMessage {
+  return {
+    id: row.id,
+    galleryId: row.gallery_id,
+    guestSessionId: row.guest_session_id ?? "",
+    guestName: row.guest_name,
+    message: row.message,
+    createdAt: row.created_at,
+    approvalStatus: row.approval_status,
+  };
+}
+
+export interface GalleryRealtimeHandlers {
+  onMedia?: (item: MediaItem) => void;
+  onVoiceMessage?: (item: VoiceMessage) => void;
+  onGuestbookMessage?: (item: GuestbookMessage) => void;
+}
+
+// Live-updates the gallery for guests currently viewing it: new photos and
+// videos, voice messages and guestbook posts appear without a manual
+// refresh (Supabase Realtime Postgres Changes — see migration 00004/00012).
+export function useGalleryRealtime(galleryId: string, handlers: GalleryRealtimeHandlers) {
+  const handlersRef = useRef(handlers);
   useEffect(() => {
-    onInsertRef.current = onInsert;
+    handlersRef.current = handlers;
   });
 
   useEffect(() => {
     if (!galleryId || !isSupabaseConfigured()) return;
 
     const supabase = createSupabaseBrowserClient();
+    const filter = `gallery_id=eq.${galleryId}`;
     const channel = supabase
-      .channel(`gallery-media-${galleryId}`)
+      .channel(`gallery-${galleryId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "media", filter: `gallery_id=eq.${galleryId}` },
+        { event: "INSERT", schema: "public", table: "media", filter },
+        (payload) => handlersRef.current.onMedia?.(mapMediaRow(payload.new as MediaRow))
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "voice_messages", filter },
+        (payload) => handlersRef.current.onVoiceMessage?.(mapVoiceRow(payload.new as VoiceMessageRow))
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "guestbook_messages", filter },
         (payload) => {
-          onInsertRef.current(mapRow(payload.new as MediaRow));
+          const row = payload.new as GuestbookRow;
+          // Manual moderation model: only ever show approved messages live.
+          if (row.approval_status !== "approved") return;
+          handlersRef.current.onGuestbookMessage?.(mapGuestbookRow(row));
         }
       )
       .subscribe();
