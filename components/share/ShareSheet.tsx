@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import type QRCodeStylingType from "qr-code-styling";
-import { cn } from "@/lib/cn";
+import { cn } from "@/lib/utils";
 import type { Gallery } from "@/lib/types";
 
 // Themed looks for the gallery QR. All use level-H error correction so a
@@ -117,6 +116,7 @@ function drawMonogram(initials: string[]): string {
   return canvas.toDataURL("image/png");
 }
 
+// Cover-fit draw helper (object-fit: cover for canvas).
 function drawCover(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
@@ -266,7 +266,7 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
     setCardBackground("photo");
   }
 
-  // 1200×1800 (4×6in) table card: background (cream / rosé wash / uploaded
+  // 1200x1800 (4x6in) table card: background (cream / rosé wash / uploaded
   // photo under a cream scrim), names, styled QR on a white card, tagline, URL.
   async function downloadTableCard() {
     if (downloadingCard) return;
@@ -350,189 +350,179 @@ export function ShareSheet({ open, onClose, gallery, galleryUrl }: ShareSheetPro
 
   const canNativeShare = typeof navigator !== "undefined" && !!navigator.share;
 
+  if (!open) return null;
+
   return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div
-            className="fixed inset-0 z-40 bg-ink/40"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-          />
-          <motion.div
-            className="fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[92svh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-cream px-5 pb-8 pt-3 shadow-sheet"
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 30, stiffness: 300 }}
-          >
-            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border" />
-            <h2 className="text-lg font-semibold">Share the gallery</h2>
-            <p className="mt-1 text-sm text-ink-muted">
-              Point any phone camera at the code — no app needed.
-            </p>
+    <div className="fixed inset-0 z-50">
+      <div
+        className="absolute inset-0 bg-ink/40"
+        onClick={onClose}
+        aria-hidden
+      />
+      <div className="absolute inset-x-0 bottom-0 mx-auto max-h-[92svh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-cream px-5 pb-8 pt-3 shadow-sheet">
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border" />
+        <h2 className="text-lg font-semibold">Share the gallery</h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          Point any phone camera at the code — no app needed.
+        </p>
 
-            <div className="mt-5 grid place-items-center">
-              <div className="rounded-3xl border border-border bg-white p-4 shadow-sm">
-                <div ref={qrContainerRef} className="h-[230px] w-[230px]" />
-              </div>
-            </div>
+        <div className="mt-5 grid place-items-center">
+          <div className="rounded-3xl border border-border bg-white p-4 shadow-sm">
+            <div ref={qrContainerRef} className="h-[230px] w-[230px]" />
+          </div>
+        </div>
 
-            <div className="mt-4 flex items-start justify-center gap-3">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setPreset(p.id)}
-                  className="flex flex-col items-center gap-1"
-                  aria-label={"QR style: " + p.label}
-                >
-                  <span
-                    className={cn(
-                      "h-9 w-9 rounded-full border-2 transition",
-                      p.swatchClass,
-                      preset === p.id ? "border-ink ring-2 ring-ink/20" : "border-transparent"
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      "text-[10px]",
-                      preset === p.id ? "font-semibold" : "text-ink-muted"
-                    )}
-                  >
-                    {p.label}
-                  </span>
-                </button>
-              ))}
-              <div className="mx-1 h-9 w-px bg-border" />
-              <button
-                onClick={() => setWithLogo((v) => !v)}
-                className="flex flex-col items-center gap-1"
-                aria-pressed={withLogo}
-                aria-label="Toggle monogram"
-              >
-                <span
-                  className={cn(
-                    "grid h-9 w-9 place-items-center rounded-full border-2 text-[10px] font-semibold transition",
-                    withLogo
-                      ? "border-ink bg-cream text-ink"
-                      : "border-dashed border-ink-muted/40 text-ink-muted"
-                  )}
-                >
-                  {initials.length > 0 ? initials.join("&") : "--"}
-                </span>
-                <span
-                  className={cn(
-                    "text-[10px]",
-                    withLogo ? "font-semibold" : "text-ink-muted"
-                  )}
-                >
-                  {withLogo ? "Logo on" : "No logo"}
-                </span>
-              </button>
-            </div>
-
-            <div className="mt-5 flex items-center gap-2 rounded-xl border border-border bg-white px-3 py-2">
-              <input
-                id="share-gallery-url"
-                readOnly
-                value={galleryUrl}
-                className="min-w-0 flex-1 bg-transparent text-sm text-ink-muted"
+        <div className="mt-4 flex items-start justify-center gap-3">
+          {PRESETS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPreset(p.id)}
+              className="flex flex-col items-center gap-1"
+              aria-label={"QR style: " + p.label}
+            >
+              <span
+                className={cn(
+                  "h-9 w-9 rounded-full border-2 transition",
+                  p.swatchClass,
+                  preset === p.id ? "border-ink ring-2 ring-ink/20" : "border-transparent"
+                )}
               />
-              <button
-                onClick={copyLink}
-                className="shrink-0 rounded-lg bg-pine px-3 py-1.5 text-xs font-semibold text-white"
+              <span
+                className={cn(
+                  "text-[10px]",
+                  preset === p.id ? "font-semibold" : "text-ink-muted"
+                )}
               >
-                {copied ? "Copied!" : "Copy"}
-              </button>
-            </div>
-
-            <div className="mt-3 flex gap-2">
-              {canNativeShare && (
-                <button
-                  onClick={shareNative}
-                  className="flex-1 rounded-xl bg-blush-dark py-3 text-sm font-semibold text-white"
-                >
-                  Share
-                </button>
+                {p.label}
+              </span>
+            </button>
+          ))}
+          <div className="mx-1 h-9 w-px bg-border" />
+          <button
+            onClick={() => setWithLogo((v) => !v)}
+            className="flex flex-col items-center gap-1"
+            aria-pressed={withLogo}
+            aria-label="Toggle monogram"
+          >
+            <span
+              className={cn(
+                "grid h-9 w-9 place-items-center rounded-full border-2 text-[10px] font-semibold transition",
+                withLogo
+                  ? "border-ink bg-cream text-ink"
+                  : "border-dashed border-ink-muted/40 text-ink-muted"
               )}
-              <button
-                onClick={downloadQR}
-                disabled={downloadingQR}
-                className="flex-1 rounded-xl border border-pine py-3 text-sm font-semibold text-pine disabled:opacity-60"
-              >
-                {downloadingQR ? "Preparing…" : "Download QR"}
-              </button>
-            </div>
+            >
+              {initials.length > 0 ? initials.join("&") : "--"}
+            </span>
+            <span
+              className={cn(
+                "text-[10px]",
+                withLogo ? "font-semibold" : "text-ink-muted"
+              )}
+            >
+              {withLogo ? "Logo on" : "No logo"}
+            </span>
+          </button>
+        </div>
 
-            <div className="mt-5 rounded-2xl border border-border bg-white/60 p-4">
-              <p className="text-sm font-semibold">Make a table card</p>
-              <p className="mt-0.5 text-xs text-ink-muted">
-                4x6in print PNG with your names, the QR and the link.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  onClick={() => setCardBackground("cream")}
-                  className={cn(
-                    "rounded-full px-3 py-1.5 text-xs font-medium transition",
-                    cardBackground === "cream"
-                      ? "bg-ink text-cream"
-                      : "border border-border text-ink-muted"
-                  )}
-                >
-                  Cream
-                </button>
-                <button
-                  onClick={() => setCardBackground("rose")}
-                  className={cn(
-                    "rounded-full px-3 py-1.5 text-xs font-medium transition",
-                    cardBackground === "rose"
-                      ? "bg-ink text-cream"
-                      : "border border-border text-ink-muted"
-                  )}
-                >
-                  Rosé wash
-                </button>
-                <button
-                  onClick={() => {
-                    if (cardPhotoUrl) setCardBackground("photo");
-                    else fileInputRef.current?.click();
-                  }}
-                  className={cn(
-                    "rounded-full px-3 py-1.5 text-xs font-medium transition",
-                    cardBackground === "photo"
-                      ? "bg-ink text-cream"
-                      : "border border-border text-ink-muted"
-                  )}
-                >
-                  {cardPhotoUrl ? "Photo selected — tap to keep, upload to change" : "Your photo"}
-                </button>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-ink-muted"
-                >
-                  {cardPhotoUrl ? "Change photo" : "Upload photo"}
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => pickCardPhoto(e.target.files?.[0] ?? null)}
-                />
-              </div>
-              <button
-                onClick={downloadTableCard}
-                disabled={downloadingCard}
-                className="mt-3 w-full rounded-xl bg-pine py-3 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                {downloadingCard ? "Building card…" : "Download table card"}
-              </button>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+        <div className="mt-5 flex items-center gap-2 rounded-xl border border-border bg-white px-3 py-2">
+          <input
+            id="share-gallery-url"
+            readOnly
+            value={galleryUrl}
+            className="min-w-0 flex-1 bg-transparent text-sm text-ink-muted"
+          />
+          <button
+            onClick={copyLink}
+            className="shrink-0 rounded-lg bg-pine px-3 py-1.5 text-xs font-semibold text-white"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </div>
+
+        <div className="mt-3 flex gap-2">
+          {canNativeShare && (
+            <button
+              onClick={shareNative}
+              className="flex-1 rounded-xl bg-blush-dark py-3 text-sm font-semibold text-white"
+            >
+              Share
+            </button>
+          )}
+          <button
+            onClick={downloadQR}
+            disabled={downloadingQR}
+            className="flex-1 rounded-xl border border-pine py-3 text-sm font-semibold text-pine disabled:opacity-60"
+          >
+            {downloadingQR ? "Preparing…" : "Download QR"}
+          </button>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-border bg-white/60 p-4">
+          <p className="text-sm font-semibold">Make a table card</p>
+          <p className="mt-0.5 text-xs text-ink-muted">
+            4x6in print PNG with your names, the QR and the link.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={() => setCardBackground("cream")}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-medium transition",
+                cardBackground === "cream"
+                  ? "bg-ink text-cream"
+                  : "border border-border text-ink-muted"
+              )}
+            >
+              Cream
+            </button>
+            <button
+              onClick={() => setCardBackground("rose")}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-medium transition",
+                cardBackground === "rose"
+                  ? "bg-ink text-cream"
+                  : "border border-border text-ink-muted"
+              )}
+            >
+              Rosé wash
+            </button>
+            <button
+              onClick={() => {
+                if (cardPhotoUrl) setCardBackground("photo");
+                else fileInputRef.current?.click();
+              }}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-medium transition",
+                cardBackground === "photo"
+                  ? "bg-ink text-cream"
+                  : "border border-border text-ink-muted"
+              )}
+            >
+              {cardPhotoUrl ? "Photo selected" : "Your photo"}
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-ink-muted"
+            >
+              {cardPhotoUrl ? "Change photo" : "Upload photo"}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => pickCardPhoto(e.target.files?.[0] ?? null)}
+            />
+          </div>
+          <button
+            onClick={downloadTableCard}
+            disabled={downloadingCard}
+            className="mt-3 w-full rounded-xl bg-pine py-3 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {downloadingCard ? "Building card…" : "Download table card"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
