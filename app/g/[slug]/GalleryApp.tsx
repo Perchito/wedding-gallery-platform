@@ -316,9 +316,14 @@ export function GalleryApp({
         galleryUrl={galleryUrl}
       />
 
+      {/* Hand-off race fix: the menu fires BOTH "open the target sheet" and
+          onClose in the same tap. Batched setSheet calls then fight — and
+          setSheet(null) used to win, dismissing the menu without the target
+          sheet ever appearing. Only honour "close" while the More menu is
+          still the active sheet, so a hand-off always wins. */}
       <MoreMenuSheet
         open={sheet === "more"}
-        onClose={() => setSheet(null)}
+        onClose={() => setSheet((s) => (s === "more" ? null : s))}
         onSchedule={() => setSheet("schedule")}
         onViewAll={() => setActiveCategory("all")}
         onJumpToGallery={() =>
