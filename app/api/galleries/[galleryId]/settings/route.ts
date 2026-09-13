@@ -10,6 +10,7 @@ const FIELD_MAP: Record<keyof GallerySettings, string> = {
   allowVoiceMessages: "allow_voice_messages",
   allowPhotoHunt: "allow_photo_hunt",
   privacy: "privacy",
+  qrCardSettings: "qr_card_settings",
 };
 
 // Owner-only — the cookie-aware client respects RLS, so a non-owner's

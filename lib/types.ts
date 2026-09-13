@@ -2,6 +2,8 @@
 // The Phase 1 MVP uses these as in-memory / mock-data shapes so the UI layer
 // does not need to change when a real backend is wired in.
 
+import type { QrCardSettings } from "@/lib/qr";
+
 export type MediaType = "photo" | "video";
 
 export type ProcessingStatus = "pending" | "processing" | "ready" | "failed";
@@ -22,6 +24,7 @@ export interface GallerySettings {
   allowVoiceMessages: boolean;
   allowPhotoHunt: boolean;
   privacy: "public" | "private" | "password";
+  qrCardSettings?: QrCardSettings | null;
 }
 
 export interface Gallery {
