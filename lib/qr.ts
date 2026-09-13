@@ -50,14 +50,19 @@ export interface WeddingCardOptions {
   textColor: string;
   font: CardFont;
   qrSizeMm: number; // 30-120
-  logoDataUrl?: string | null;
   fileName: string;
 }
 
+// Opens the finished card in a new tab (the browser's own PDF viewer) rather
+// than forcing a silent download — the reader can look it over, print, or
+// save it from there. The QR image passed in already has whatever center
+// image (monogram/logo) the customizer configured baked in by
+// qr-code-styling, so the card itself only ever draws it once.
 export async function generateWeddingCardPdf(options: WeddingCardOptions) {
   const { jsPDF } = await import("jspdf");
 
   const doc = new jsPDF({ unit: "mm", format: "a5" });
+  doc.setProperties({ title: options.fileName });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
 
@@ -68,13 +73,7 @@ export async function generateWeddingCardPdf(options: WeddingCardOptions) {
   const textRgb = hexToRgbTuple(options.textColor);
   doc.setTextColor(textRgb[0], textRgb[1], textRgb[2]);
 
-  let y = 22;
-
-  if (options.logoDataUrl) {
-    const logoSize = 16;
-    doc.addImage(options.logoDataUrl, "PNG", (pageW - logoSize) / 2, y - 12, logoSize, logoSize);
-    y += 10;
-  }
+  const y = 22;
 
   doc.setFont(options.font, "bold");
   doc.setFontSize(26);
@@ -97,7 +96,9 @@ export async function generateWeddingCardPdf(options: WeddingCardOptions) {
   doc.setFontSize(11);
   doc.text(options.instructions, pageW / 2, afterQrY + 8, { align: "center" });
 
-  doc.save(options.fileName);
+  const blobUrl = URL.createObjectURL(doc.output("blob"));
+  window.open(blobUrl, "_blank");
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
 }
 
 export function blobToDataUrl(blob: Blob): Promise<string> {
