@@ -62,6 +62,11 @@ const MAX_QR_MM = 120;
 
 const SAVE_DEBOUNCE_MS = 500;
 
+// Uploaded logos come in at whatever resolution the owner's phone shot them
+// at (often several MB) — bounding them client-side keeps every QR render
+// (preview included) fast and keeps the saved settings payload small.
+const LOGO_MAX_DIMENSION = 480;
+
 async function saveQrCardSettings(galleryId: string, settings: QrCardSettings) {
   const res = await fetch(`/api/galleries/${galleryId}/settings`, {
     method: "PATCH",
@@ -69,6 +74,29 @@ async function saveQrCardSettings(galleryId: string, settings: QrCardSettings) {
     body: JSON.stringify({ qrCardSettings: settings }),
   });
   if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+}
+
+function downscaleImage(dataUrl: string, maxDimension: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+      const width = Math.max(1, Math.round(img.width * scale));
+      const height = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("No canvas context"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => reject(new Error("Failed to load image"));
+    img.src = dataUrl;
+  });
 }
 
 export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerProps) {
@@ -102,6 +130,8 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   const libRef = useRef<typeof import("qr-code-styling")["default"] | null>(null);
   const hydratedRef = useRef(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
+  const pendingSaveRef = useRef<QrCardSettings | null>(null);
 
   // Load settings saved from a previous visit (any device — this now reads
   // from gallery_settings.qr_card_settings, not browser storage) before
@@ -132,6 +162,37 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   }, [gallery]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // Sends one save at a time — if edits come in while a save is still in
+  // flight, they're coalesced into a single follow-up save of the latest
+  // snapshot once the current request finishes, rather than firing a second
+  // overlapping request. Without this, two in-flight PATCHes can resolve out
+  // of order and the older one (with stale field values) lands last in the
+  // database, silently reverting a change the owner already made.
+  // Stored in a ref (rather than a plain const) so the recursive call in its
+  // own `.finally()` always reaches the latest version instead of closing
+  // over itself before it's assigned. Set up once — the function only
+  // touches refs and the stable setState setter, nothing reactive.
+  const flushSaveRef = useRef<(galleryId: string, snapshot: QrCardSettings) => void>(() => {});
+  useEffect(() => {
+    flushSaveRef.current = (galleryId, snapshot) => {
+      savingRef.current = true;
+      saveQrCardSettings(galleryId, snapshot)
+        .then(() => setSaveStatus("saved"))
+        .catch((err) => {
+          console.error("[qr-card] failed to save settings:", err);
+          setSaveStatus("error");
+        })
+        .finally(() => {
+          savingRef.current = false;
+          const next = pendingSaveRef.current;
+          if (next) {
+            pendingSaveRef.current = null;
+            flushSaveRef.current(galleryId, next);
+          }
+        });
+    };
+  }, []);
+
   // Autosave to the gallery's own settings row, debounced — this is what
   // stands in for a save button, and (unlike the localStorage version this
   // replaced) follows the gallery to any browser or device.
@@ -159,12 +220,11 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
         centerImageMode,
         logoDataUrl,
       };
-      saveQrCardSettings(gallery.id, snapshot)
-        .then(() => setSaveStatus("saved"))
-        .catch((err) => {
-          console.error("[qr-card] failed to save settings:", err);
-          setSaveStatus("error");
-        });
+      if (savingRef.current) {
+        pendingSaveRef.current = snapshot;
+      } else {
+        flushSaveRef.current(gallery.id, snapshot);
+      }
     }, SAVE_DEBOUNCE_MS);
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -294,8 +354,14 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   function handleLogoUpload(file: File | null) {
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      setLogoDataUrl(reader.result as string);
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      try {
+        setLogoDataUrl(await downscaleImage(dataUrl, LOGO_MAX_DIMENSION));
+      } catch (err) {
+        console.error("[qr-card] failed to downscale logo, using original:", err);
+        setLogoDataUrl(dataUrl);
+      }
       selectCenterImageMode("logo");
     };
     reader.readAsDataURL(file);
@@ -323,7 +389,6 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
         textColor,
         font,
         qrSizeMm,
-        logoDataUrl: centerImageMode === "logo" ? null : logoDataUrl,
         fileName: `${gallery.slug}-wedding-card.pdf`,
       });
     } catch (err) {
