@@ -1,42 +1,13 @@
-import QRCode from "qrcode";
-
-export async function galleryQrPngDataUrl(url: string, size = 512) {
-  return QRCode.toDataURL(url, {
-    width: size,
-    margin: 1,
-    color: { dark: "#241c19", light: "#ffffffff" },
-  });
-}
-
-export async function galleryQrSvgString(url: string) {
-  return QRCode.toString(url, {
-    type: "svg",
-    margin: 1,
-    color: { dark: "#241c19", light: "#ffffff" },
-  });
-}
-
-export function downloadDataUrl(dataUrl: string, fileName: string) {
-  const a = document.createElement("a");
-  a.href = dataUrl;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
-export function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  downloadDataUrl(url, fileName);
-  URL.revokeObjectURL(url);
-}
-
 // ---------------------------------------------------------------------------
 // Printable "QR Wedding Card" (spec section 25) — customizable signage with
 // names, date, QR code, and instructions. jsPDF only ships a handful of
 // built-in font families (no arbitrary Google Fonts without embedding TTFs),
 // so "typography" is exposed as a choice between those built-ins rather than
 // the webfonts used elsewhere in the app.
+//
+// The QR code itself is rendered upstream (by the caller, via
+// qr-code-styling) so every export — live preview, standalone PNG/SVG, and
+// this PDF card — shares one styling pipeline instead of drifting apart.
 // ---------------------------------------------------------------------------
 
 export type CardFont = "times" | "helvetica" | "courier";
@@ -45,27 +16,19 @@ export interface WeddingCardOptions {
   partnerA: string;
   partnerB: string;
   eventDateLabel: string;
-  galleryUrl: string;
+  qrDataUrl: string;
   tagline: string;
   instructions: string;
   backgroundColor: string;
   textColor: string;
-  accentColor: string;
   font: CardFont;
-  qrSizeMm: number; // 40-100
+  qrSizeMm: number; // 30-120
   logoDataUrl?: string | null;
   fileName: string;
 }
 
 export async function generateWeddingCardPdf(options: WeddingCardOptions) {
-  const [{ jsPDF }, qrDataUrl] = await Promise.all([
-    import("jspdf"),
-    QRCode.toDataURL(options.galleryUrl, {
-      width: 800,
-      margin: 1,
-      color: { dark: options.accentColor, light: "#ffffffff" },
-    }),
-  ]);
+  const { jsPDF } = await import("jspdf");
 
   const doc = new jsPDF({ unit: "mm", format: "a5" });
   const pageW = doc.internal.pageSize.getWidth();
@@ -94,8 +57,8 @@ export async function generateWeddingCardPdf(options: WeddingCardOptions) {
   doc.setFontSize(13);
   doc.text(options.eventDateLabel, pageW / 2, y + 9, { align: "center" });
 
-  const qrSize = Math.min(options.qrSizeMm, pageH - 70);
-  doc.addImage(qrDataUrl, "PNG", (pageW - qrSize) / 2, y + 18, qrSize, qrSize);
+  const qrSize = Math.min(options.qrSizeMm, pageW - 20, pageH - 70);
+  doc.addImage(options.qrDataUrl, "PNG", (pageW - qrSize) / 2, y + 18, qrSize, qrSize);
 
   const afterQrY = y + 18 + qrSize + 12;
 
@@ -108,6 +71,15 @@ export async function generateWeddingCardPdf(options: WeddingCardOptions) {
   doc.text(options.instructions, pageW / 2, afterQrY + 8, { align: "center" });
 
   doc.save(options.fileName);
+}
+
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 function hexToRgbTuple(hex: string): [number, number, number] {
