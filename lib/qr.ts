@@ -10,7 +10,34 @@
 // this PDF card — shares one styling pipeline instead of drifting apart.
 // ---------------------------------------------------------------------------
 
+import type { DotType, ErrorCorrectionLevel } from "qr-code-styling";
+
 export type CardFont = "times" | "helvetica" | "courier";
+
+export type CenterImageMode = "none" | "monogram" | "logo";
+
+// Everything the QR wedding card customizer lets an owner tweak, persisted
+// as-is in gallery_settings.qr_card_settings (jsonb) so it round-trips
+// through the settings API without a bespoke shape on either side.
+export interface QrCardSettings {
+  partnerA: string;
+  partnerB: string;
+  dateLabel: string;
+  tagline: string;
+  instructions: string;
+  backgroundColor: string;
+  textColor: string;
+  accentColor: string;
+  font: CardFont;
+  qrSizeMm: number;
+  dotStyle: DotType;
+  cornerStyleId: string;
+  errorCorrection: ErrorCorrectionLevel;
+  marginRatio: number;
+  transparentBackground: boolean;
+  centerImageMode: CenterImageMode;
+  logoDataUrl: string | null;
+}
 
 export interface WeddingCardOptions {
   partnerA: string;

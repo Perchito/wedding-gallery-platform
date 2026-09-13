@@ -4,7 +4,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft, Download, Upload } from "lucide-react";
 import { formatEventDate } from "@/lib/utils";
-import { blobToDataUrl, generateWeddingCardPdf, type CardFont } from "@/lib/qr";
+import {
+  blobToDataUrl,
+  generateWeddingCardPdf,
+  type CardFont,
+  type CenterImageMode,
+  type QrCardSettings,
+} from "@/lib/qr";
 import type { Gallery } from "@/lib/types";
 import type QRCodeStylingType from "qr-code-styling";
 import type { CornerDotType, CornerSquareType, DotType, ErrorCorrectionLevel } from "qr-code-styling";
@@ -47,8 +53,6 @@ const ERROR_CORRECTION_OPTIONS: { id: ErrorCorrectionLevel; label: string }[] = 
   { id: "H", label: "H" },
 ];
 
-type CenterImageMode = "none" | "monogram" | "logo";
-
 // A5 page width in mm — the live preview card is drawn at this aspect ratio,
 // so a QR's on-screen size can be expressed as a plain percentage of the
 // card's width instead of guessing pixel widths.
@@ -56,43 +60,15 @@ const CARD_WIDTH_MM = 148;
 const MIN_QR_MM = 30;
 const MAX_QR_MM = 120;
 
-// There's no per-gallery card-style column in the database, so customizations
-// persist to this browser only — keyed per gallery so multiple cards don't
-// collide. Good enough for "I closed the tab and lost my styling"; syncing
-// across devices would need a schema change.
 const SAVE_DEBOUNCE_MS = 500;
 
-function storageKey(galleryId: string) {
-  return `qr-card-settings:${galleryId}`;
-}
-
-interface QrCardSettings {
-  partnerA: string;
-  partnerB: string;
-  dateLabel: string;
-  tagline: string;
-  instructions: string;
-  backgroundColor: string;
-  textColor: string;
-  accentColor: string;
-  font: CardFont;
-  qrSizeMm: number;
-  dotStyle: DotType;
-  cornerStyleId: string;
-  errorCorrection: ErrorCorrectionLevel;
-  marginRatio: number;
-  transparentBackground: boolean;
-  centerImageMode: CenterImageMode;
-  logoDataUrl: string | null;
-}
-
-function loadSavedSettings(galleryId: string): Partial<QrCardSettings> | null {
-  try {
-    const raw = window.localStorage.getItem(storageKey(galleryId));
-    return raw ? (JSON.parse(raw) as Partial<QrCardSettings>) : null;
-  } catch {
-    return null;
-  }
+async function saveQrCardSettings(galleryId: string, settings: QrCardSettings) {
+  const res = await fetch(`/api/galleries/${galleryId}/settings`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ qrCardSettings: settings }),
+  });
+  if (!res.ok) throw new Error(`Save failed: ${res.status}`);
 }
 
 export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerProps) {
@@ -116,7 +92,7 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   const [centerImageMode, setCenterImageMode] = useState<CenterImageMode>("none");
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<"pdf" | "png" | "svg" | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -127,13 +103,14 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   const hydratedRef = useRef(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load any settings saved from a previous visit before anything else runs,
-  // so the autosave effect below doesn't get a chance to stomp them with
-  // fresh defaults.
+  // Load settings saved from a previous visit (any device — this now reads
+  // from gallery_settings.qr_card_settings, not browser storage) before
+  // anything else runs, so the autosave effect below doesn't get a chance
+  // to stomp them with fresh defaults.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!gallery) return;
-    const saved = loadSavedSettings(gallery.id);
+    const saved = gallery.settings.qrCardSettings ?? null;
     setPartnerA(saved?.partnerA ?? gallery.partnerNames[0]);
     setPartnerB(saved?.partnerB ?? gallery.partnerNames[1]);
     setDateLabel(saved?.dateLabel ?? formatEventDate(gallery.eventDate));
@@ -155,11 +132,13 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   }, [gallery]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Autosave to this browser, debounced — there's no per-gallery card-style
-  // column in the database yet, so this is what stands in for a save button.
+  // Autosave to the gallery's own settings row, debounced — this is what
+  // stands in for a save button, and (unlike the localStorage version this
+  // replaced) follows the gallery to any browser or device.
   useEffect(() => {
     if (!gallery || !hydratedRef.current) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    setSaveStatus("saving");
     saveTimeoutRef.current = setTimeout(() => {
       const snapshot: QrCardSettings = {
         partnerA,
@@ -180,13 +159,12 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
         centerImageMode,
         logoDataUrl,
       };
-      try {
-        window.localStorage.setItem(storageKey(gallery.id), JSON.stringify(snapshot));
-        setSaveStatus("saved");
-      } catch (err) {
-        console.error("[qr-card] failed to save settings locally:", err);
-        setSaveStatus("error");
-      }
+      saveQrCardSettings(gallery.id, snapshot)
+        .then(() => setSaveStatus("saved"))
+        .catch((err) => {
+          console.error("[qr-card] failed to save settings:", err);
+          setSaveStatus("error");
+        });
     }, SAVE_DEBOUNCE_MS);
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -412,12 +390,19 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
       <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-muted">
         <span
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-            saveStatus === "saved" ? "bg-emerald-500" : saveStatus === "error" ? "bg-red-500" : "bg-ink-muted/40"
+            saveStatus === "saved"
+              ? "bg-emerald-500"
+              : saveStatus === "error"
+                ? "bg-red-500"
+                : saveStatus === "saving"
+                  ? "bg-amber-400"
+                  : "bg-ink-muted/40"
           }`}
         />
-        {saveStatus === "saved" && "Changes saved to this browser"}
-        {saveStatus === "error" && "Couldn't save changes locally — your browser's storage may be full or blocked"}
-        {saveStatus === "idle" && "Changes save automatically to this browser as you edit"}
+        {saveStatus === "saved" && "Saved to your account"}
+        {saveStatus === "saving" && "Saving…"}
+        {saveStatus === "error" && "Couldn't save changes — check your connection and try again"}
+        {saveStatus === "idle" && "Changes save automatically as you edit"}
       </p>
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_320px]">

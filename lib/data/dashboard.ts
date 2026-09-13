@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnerPlan, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import type { Gallery, GalleryStats, GallerySettings, MediaItem } from "@/lib/types";
+import type { QrCardSettings } from "@/lib/qr";
 
 interface SettingsRow {
   allow_uploads: boolean;
@@ -10,6 +11,7 @@ interface SettingsRow {
   allow_voice_messages: boolean;
   allow_photo_hunt: boolean;
   privacy: GallerySettings["privacy"];
+  qr_card_settings: QrCardSettings | null;
 }
 
 interface GalleryRow {
@@ -57,6 +59,7 @@ function mapGalleryRow(row: GalleryRow, owner: { id: string; name: string; email
           allowVoiceMessages: settingsRow.allow_voice_messages,
           allowPhotoHunt: settingsRow.allow_photo_hunt,
           privacy: settingsRow.privacy,
+          qrCardSettings: settingsRow.qr_card_settings,
         }
       : DEFAULT_SETTINGS,
     createdAt: row.created_at,
