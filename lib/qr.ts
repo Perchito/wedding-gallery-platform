@@ -51,6 +51,15 @@ export interface WeddingCardOptions {
   font: CardFont;
   qrSizeMm: number; // 30-120
   fileName: string;
+  // A tab opened synchronously by the caller, in direct response to the
+  // click, before any of this function's async work started. Browsers only
+  // allow window.open() to bypass their popup blocker when it happens
+  // inside the original click's call stack — by the time this function's
+  // own PDF rendering finishes, that window has long since closed, so
+  // calling window.open() here would get silently blocked (Safari
+  // especially) with no error and nothing visibly happening. Passing the
+  // already-open tab in and just navigating it sidesteps that entirely.
+  targetWindow?: Window | null;
 }
 
 // Opens the finished card in a new tab (the browser's own PDF viewer) rather
@@ -97,7 +106,11 @@ export async function generateWeddingCardPdf(options: WeddingCardOptions) {
   doc.text(options.instructions, pageW / 2, afterQrY + 8, { align: "center" });
 
   const blobUrl = URL.createObjectURL(doc.output("blob"));
-  window.open(blobUrl, "_blank");
+  if (options.targetWindow && !options.targetWindow.closed) {
+    options.targetWindow.location.href = blobUrl;
+  } else {
+    window.open(blobUrl, "_blank");
+  }
   setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
 }
 
