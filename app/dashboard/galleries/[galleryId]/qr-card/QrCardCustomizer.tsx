@@ -56,6 +56,45 @@ const CARD_WIDTH_MM = 148;
 const MIN_QR_MM = 30;
 const MAX_QR_MM = 120;
 
+// There's no per-gallery card-style column in the database, so customizations
+// persist to this browser only — keyed per gallery so multiple cards don't
+// collide. Good enough for "I closed the tab and lost my styling"; syncing
+// across devices would need a schema change.
+const SAVE_DEBOUNCE_MS = 500;
+
+function storageKey(galleryId: string) {
+  return `qr-card-settings:${galleryId}`;
+}
+
+interface QrCardSettings {
+  partnerA: string;
+  partnerB: string;
+  dateLabel: string;
+  tagline: string;
+  instructions: string;
+  backgroundColor: string;
+  textColor: string;
+  accentColor: string;
+  font: CardFont;
+  qrSizeMm: number;
+  dotStyle: DotType;
+  cornerStyleId: string;
+  errorCorrection: ErrorCorrectionLevel;
+  marginRatio: number;
+  transparentBackground: boolean;
+  centerImageMode: CenterImageMode;
+  logoDataUrl: string | null;
+}
+
+function loadSavedSettings(galleryId: string): Partial<QrCardSettings> | null {
+  try {
+    const raw = window.localStorage.getItem(storageKey(galleryId));
+    return raw ? (JSON.parse(raw) as Partial<QrCardSettings>) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerProps) {
   const gallery = serverGallery;
 
@@ -77,6 +116,7 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   const [centerImageMode, setCenterImageMode] = useState<CenterImageMode>("none");
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<"pdf" | "png" | "svg" | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -84,15 +124,93 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   const qrContainerRef = useRef<HTMLDivElement>(null);
   const qrRef = useRef<QRCodeStylingType | null>(null);
   const libRef = useRef<typeof import("qr-code-styling")["default"] | null>(null);
+  const hydratedRef = useRef(false);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Load any settings saved from a previous visit before anything else runs,
+  // so the autosave effect below doesn't get a chance to stomp them with
+  // fresh defaults.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!gallery) return;
-    setPartnerA(gallery.partnerNames[0]);
-    setPartnerB(gallery.partnerNames[1]);
-    setDateLabel(formatEventDate(gallery.eventDate));
+    const saved = loadSavedSettings(gallery.id);
+    setPartnerA(saved?.partnerA ?? gallery.partnerNames[0]);
+    setPartnerB(saved?.partnerB ?? gallery.partnerNames[1]);
+    setDateLabel(saved?.dateLabel ?? formatEventDate(gallery.eventDate));
+    if (saved?.tagline !== undefined) setTagline(saved.tagline);
+    if (saved?.instructions !== undefined) setInstructions(saved.instructions);
+    if (saved?.backgroundColor !== undefined) setBackgroundColor(saved.backgroundColor);
+    if (saved?.textColor !== undefined) setTextColor(saved.textColor);
+    if (saved?.accentColor !== undefined) setAccentColor(saved.accentColor);
+    if (saved?.font !== undefined) setFont(saved.font);
+    if (saved?.qrSizeMm !== undefined) setQrSizeMm(saved.qrSizeMm);
+    if (saved?.dotStyle !== undefined) setDotStyle(saved.dotStyle);
+    if (saved?.cornerStyleId !== undefined) setCornerStyleId(saved.cornerStyleId);
+    if (saved?.errorCorrection !== undefined) setErrorCorrection(saved.errorCorrection);
+    if (saved?.marginRatio !== undefined) setMarginRatio(saved.marginRatio);
+    if (saved?.transparentBackground !== undefined) setTransparentBackground(saved.transparentBackground);
+    if (saved?.centerImageMode !== undefined) setCenterImageMode(saved.centerImageMode);
+    if (saved?.logoDataUrl !== undefined) setLogoDataUrl(saved.logoDataUrl);
+    hydratedRef.current = true;
   }, [gallery]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Autosave to this browser, debounced — there's no per-gallery card-style
+  // column in the database yet, so this is what stands in for a save button.
+  useEffect(() => {
+    if (!gallery || !hydratedRef.current) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      const snapshot: QrCardSettings = {
+        partnerA,
+        partnerB,
+        dateLabel,
+        tagline,
+        instructions,
+        backgroundColor,
+        textColor,
+        accentColor,
+        font,
+        qrSizeMm,
+        dotStyle,
+        cornerStyleId,
+        errorCorrection,
+        marginRatio,
+        transparentBackground,
+        centerImageMode,
+        logoDataUrl,
+      };
+      try {
+        window.localStorage.setItem(storageKey(gallery.id), JSON.stringify(snapshot));
+        setSaveStatus("saved");
+      } catch (err) {
+        console.error("[qr-card] failed to save settings locally:", err);
+        setSaveStatus("error");
+      }
+    }, SAVE_DEBOUNCE_MS);
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [
+    gallery,
+    partnerA,
+    partnerB,
+    dateLabel,
+    tagline,
+    instructions,
+    backgroundColor,
+    textColor,
+    accentColor,
+    font,
+    qrSizeMm,
+    dotStyle,
+    cornerStyleId,
+    errorCorrection,
+    marginRatio,
+    transparentBackground,
+    centerImageMode,
+    logoDataUrl,
+  ]);
 
   const galleryUrl = useMemo(() => {
     if (typeof window === "undefined" || !gallery) return "";
@@ -290,6 +408,16 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
       <p className="mt-1 text-sm text-ink-muted">
         Printable signage guests scan to open the gallery — tweak it, then
         export as PDF, PNG, or SVG.
+      </p>
+      <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-muted">
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+            saveStatus === "saved" ? "bg-emerald-500" : saveStatus === "error" ? "bg-red-500" : "bg-ink-muted/40"
+          }`}
+        />
+        {saveStatus === "saved" && "Changes saved to this browser"}
+        {saveStatus === "error" && "Couldn't save changes locally — your browser's storage may be full or blocked"}
+        {saveStatus === "idle" && "Changes save automatically to this browser as you edit"}
       </p>
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_320px]">
@@ -501,8 +629,11 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   );
 }
 
-// Cream circle with serif initials, drawn on canvas so there's no image
-// asset to host — used as the default "no logo uploaded" center image.
+// Serif initials on a transparent canvas — qr-code-styling clears the dots
+// behind a center image and paints the QR's own background color there, so
+// leaving this canvas transparent (no fill, no ring) lets the initials sit
+// directly on whatever QR background the user picked instead of carrying a
+// separate hardcoded one.
 function drawMonogram(initials: string[], accentColor: string): string {
   const size = 200;
   const canvas = document.createElement("canvas");
@@ -511,21 +642,10 @@ function drawMonogram(initials: string[], accentColor: string): string {
   const ctx = canvas.getContext("2d");
   if (!ctx) return "";
 
-  ctx.fillStyle = "#ffffff";
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 8;
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2 - 8, 0, Math.PI * 2);
-  ctx.stroke();
-
   ctx.fillStyle = accentColor;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "600 56px Georgia, 'Times New Roman', serif";
+  ctx.font = "600 64px Georgia, 'Times New Roman', serif";
   ctx.fillText(initials.join(" & "), size / 2, size / 2 + 3);
 
   return canvas.toDataURL("image/png");
