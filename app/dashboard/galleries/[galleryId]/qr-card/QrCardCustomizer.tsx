@@ -67,13 +67,32 @@ const SAVE_DEBOUNCE_MS = 500;
 // (preview included) fast and keeps the saved settings payload small.
 const LOGO_MAX_DIMENSION = 480;
 
-async function saveQrCardSettings(galleryId: string, settings: QrCardSettings) {
+async function saveQrCardSettings(galleryId: string, settings: Partial<QrCardSettings>) {
   const res = await fetch(`/api/galleries/${galleryId}/settings`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ qrCardSettings: settings }),
   });
   if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+}
+
+// Only the fields that actually changed since the last successful save need
+// to go over the wire — in particular, a center-image upload can be tens of
+// KB, and re-sending it on every unrelated keystroke (a tagline edit, a
+// slider drag) was adding several seconds to saves that touched nothing
+// about the image at all.
+function diffSettings(
+  next: QrCardSettings,
+  prev: Partial<QrCardSettings> | null
+): Partial<QrCardSettings> {
+  if (!prev) return next;
+  const changed: Partial<QrCardSettings> = {};
+  (Object.keys(next) as (keyof QrCardSettings)[]).forEach((key) => {
+    if (!Object.is(next[key], prev[key])) {
+      (changed as Record<string, unknown>)[key] = next[key];
+    }
+  });
+  return changed;
 }
 
 function downscaleImage(dataUrl: string, maxDimension: number): Promise<string> {
@@ -145,6 +164,7 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savingRef = useRef(false);
   const pendingSaveRef = useRef<QrCardSettings | null>(null);
+  const lastSavedRef = useRef<Partial<QrCardSettings> | null>(null);
 
   // Load settings saved from a previous visit (any device — this now reads
   // from gallery_settings.qr_card_settings, not browser storage) before
@@ -171,6 +191,7 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
     if (saved?.transparentBackground !== undefined) setTransparentBackground(saved.transparentBackground);
     if (saved?.centerImageMode !== undefined) setCenterImageMode(saved.centerImageMode);
     if (saved?.logoDataUrl !== undefined) setLogoDataUrl(saved.logoDataUrl);
+    lastSavedRef.current = saved;
     hydratedRef.current = true;
   }, [gallery]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -188,9 +209,22 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
   const flushSaveRef = useRef<(galleryId: string, snapshot: QrCardSettings) => void>(() => {});
   useEffect(() => {
     flushSaveRef.current = (galleryId, snapshot) => {
+      const partial = diffSettings(snapshot, lastSavedRef.current);
+      if (Object.keys(partial).length === 0) {
+        setSaveStatus("saved");
+        const next = pendingSaveRef.current;
+        if (next) {
+          pendingSaveRef.current = null;
+          flushSaveRef.current(galleryId, next);
+        }
+        return;
+      }
       savingRef.current = true;
-      saveQrCardSettings(galleryId, snapshot)
-        .then(() => setSaveStatus("saved"))
+      saveQrCardSettings(galleryId, partial)
+        .then(() => {
+          lastSavedRef.current = snapshot;
+          setSaveStatus("saved");
+        })
         .catch((err) => {
           console.error("[qr-card] failed to save settings:", err);
           setSaveStatus("error");
