@@ -5,7 +5,11 @@
 // just to wake the page/registration up, since Background Sync delivery to
 // a closed tab still requires the app's own retry logic once it's open.
 
-const CACHE_NAME = "wedding-gallery-shell-v1";
+// Bumped to v2 so browsers that already cached dashboard/auth pages under
+// v1 (before those paths were excluded below) fully purge them via the
+// existing activate-time cleanup, instead of leaving unused stale entries
+// sitting in the old cache indefinitely.
+const CACHE_NAME = "wedding-gallery-shell-v2";
 const APP_SHELL = ["/", "/g/demo", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -26,8 +30,21 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// Owner-facing pages (dashboard, auth, API) are dynamic and often behind
+// auth — a stale cached copy served on reload would show data that's
+// actually wrong, not just old, so these never read from or write to the
+// cache. Only the guest-facing gallery and the static shell get the
+// offline-friendly cache-first treatment below.
+const NEVER_CACHE_PREFIXES = ["/dashboard", "/api", "/login", "/signup", "/create", "/account"];
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+
+  const path = new URL(event.request.url).pathname;
+  if (NEVER_CACHE_PREFIXES.some((prefix) => path.startsWith(prefix))) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
