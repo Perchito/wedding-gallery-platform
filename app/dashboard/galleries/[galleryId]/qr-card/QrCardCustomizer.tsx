@@ -92,7 +92,20 @@ function downscaleImage(dataUrl: string, maxDimension: number): Promise<string> 
         return;
       }
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL("image/png"));
+
+      // A "logo" upload is just as often a real photo as a transparent PNG
+      // mark — PNG's lossless encoding makes a photo many times larger than
+      // it needs to be, so only pay that cost when the image actually has
+      // transparency to preserve.
+      const { data } = ctx.getImageData(0, 0, width, height);
+      let hasTransparency = false;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] < 255) {
+          hasTransparency = true;
+          break;
+        }
+      }
+      resolve(hasTransparency ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.85));
     };
     img.onerror = () => reject(new Error("Failed to load image"));
     img.src = dataUrl;
