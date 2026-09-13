@@ -1,5 +1,5 @@
 import "server-only";
-import { ZipArchive } from "archiver";
+import archiver from "archiver";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { MEDIA_BUCKET, storagePathFromPublicUrl } from "@/lib/supabase/storage";
 
@@ -27,7 +27,7 @@ export async function buildGalleryZip(galleryId: string): Promise<BuildGalleryZi
   if (error) throw new Error(`Failed to list media: ${error.message}`);
   if (!media || media.length === 0) throw new Error("No media to export");
 
-  const archive = new ZipArchive({ zlib: { level: 6 } });
+  const archive = archiver("zip", { zlib: { level: 6 } });
   const chunks: Buffer[] = [];
   archive.on("data", (chunk: Buffer) => chunks.push(chunk));
 
