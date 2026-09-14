@@ -416,6 +416,11 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
 
   async function handleDownloadPdf() {
     if (!gallery || downloading) return;
+    // Opened synchronously, in the same tick as the click, so the browser
+    // still counts it as user-initiated — everything below is async and
+    // would get the popup silently blocked if we waited to open it until
+    // the PDF was actually ready.
+    const targetWindow = window.open("", "_blank");
     setDownloading("pdf");
     try {
       const Lib = await ensureLib();
@@ -437,9 +442,11 @@ export function QrCardCustomizer({ galleryId, serverGallery }: QrCardCustomizerP
         font,
         qrSizeMm,
         fileName: `${gallery.slug}-wedding-card.pdf`,
+        targetWindow,
       });
     } catch (err) {
       console.error("[qr-card] PDF export failed:", err);
+      targetWindow?.close();
     } finally {
       setDownloading(null);
     }
